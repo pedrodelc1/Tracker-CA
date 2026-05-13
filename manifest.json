@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Correo Argentino Tracker",
+  "version": "1.0.0",
+  "description": "Trackea tus pedidos de Correo Argentino desde una página dedicada",
+  "action": {
+    "default_title": "Correo Tracker",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "cookies",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.correoargentino.com.ar/*",
+    "https://api.correoargentino.com.ar/*"
+  ]
+}

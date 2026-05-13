@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Correo Argentino Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <h1 class="header-title">📦 Correo Argentino Tracker</h1>
+        <span class="last-updated" id="lastUpdated"></span>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-secondary" id="btnAddManual">+ Agregar tracking</button>
+        <button class="btn btn-primary" id="btnRefresh">↻ Actualizar todos</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="notice" id="noticeLogin" style="display:none">
+        <span>⚠️</span>
+        <span>Para ver tus pedidos automáticamente, <a href="https://www.correoargentino.com.ar/mis-envios" target="_blank">iniciá sesión en Correo Argentino</a> y volvé a esta página.</span>
+      </div>
+
+      <div class="notice notice-info" id="noticeInfo" style="display:none">
+        <span id="noticeInfoText"></span>
+      </div>
+
+      <div id="loadingState" class="loading-state" style="display:none">
+        <div class="spinner"></div>
+        <p>Obteniendo pedidos...</p>
+      </div>
+
+      <div id="emptyState" class="empty-state" style="display:none">
+        <p class="empty-icon">📭</p>
+        <p>No hay pedidos activos.</p>
+        <p class="empty-sub">Agregá un número de tracking manualmente o iniciá sesión en Correo Argentino.</p>
+      </div>
+
+      <div class="grid" id="cardsGrid"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Agregar tracking manual -->
+  <div class="modal-overlay" id="modalOverlay" style="display:none">
+    <div class="modal">
+      <h2 class="modal-title">Agregar pedido</h2>
+      <label class="modal-label">Número de tracking <span class="req">*</span></label>
+      <input class="modal-input" id="inputTracking" type="text" placeholder="Ej: AR123456789AR" />
+      <label class="modal-label">Nombre / Etiqueta</label>
+      <input class="modal-input" id="inputLabel" type="text" placeholder="Ej: Zapatillas Nike" />
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btnModalCancel">Cancelar</button>
+        <button class="btn btn-primary" id="btnModalAdd">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
