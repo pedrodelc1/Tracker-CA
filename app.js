@@ -30,7 +30,8 @@ function normalizeStatus(raw = "") {
 }
 
 // ─── Estado en memoria ────────────────────────────────────────────────────────
-let packages = [];
+let packages   = [];
+let activeTab  = "pendientes";
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 function loadStorage() {
@@ -251,11 +252,28 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function updateTabCounts() {
+  const counts = { pendientes: 0, pagados: 0, manuales: 0 };
+  packages.forEach(p => {
+    if (p.source === "auto")    counts.pendientes++;
+    else if (p.source === "pagado")  counts.pagados++;
+    else if (p.source === "manual")  counts.manuales++;
+  });
+  document.getElementById("countPendientes").textContent = counts.pendientes || "";
+  document.getElementById("countPagados").textContent    = counts.pagados    || "";
+  document.getElementById("countManuales").textContent   = counts.manuales   || "";
+}
+
 function renderCards() {
   const grid  = document.getElementById("cardsGrid");
   const empty = document.getElementById("emptyState");
 
-  if (packages.length === 0) {
+  const sourceMap = { pendientes: "auto", pagados: "pagado", manuales: "manual" };
+  const visible   = packages.filter(p => p.source === sourceMap[activeTab]);
+
+  updateTabCounts();
+
+  if (visible.length === 0) {
     grid.innerHTML = "";
     empty.style.display = "block";
     return;
@@ -264,7 +282,9 @@ function renderCards() {
   empty.style.display = "none";
   grid.innerHTML = "";
 
+  // Usar índices globales para que eliminar/editar funcionen correctamente
   packages.forEach((pkg, idx) => {
+    if (pkg.source !== sourceMap[activeTab]) return;
     const st   = STATUS_MAP[pkg.status] || STATUS_MAP.process;
     const card = document.createElement("div");
     card.className = `card ${st.cssClass}`;
@@ -397,6 +417,15 @@ document.getElementById("cardsGrid").addEventListener("change", async (e) => {
 
 // ─── Botones ──────────────────────────────────────────────────────────────────
 document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeTab = btn.dataset.tab;
+    renderCards();
+  });
+});
 
 document.getElementById("btnLogin").addEventListener("click", () => {
   chrome.tabs.create({ url: "https://www.correoargentino.com.ar/MiCorreo/public/login" });

@@ -35,10 +35,15 @@
         <p>Obteniendo pedidos...</p>
       </div>
 
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="pendientes">Pendientes <span class="tab-count" id="countPendientes"></span></button>
+        <button class="tab-btn" data-tab="pagados">Pagados <span class="tab-count" id="countPagados"></span></button>
+        <button class="tab-btn" data-tab="manuales">Manuales <span class="tab-count" id="countManuales"></span></button>
+      </div>
+
       <div id="emptyState" class="empty-state" style="display:none">
         <p class="empty-icon">📭</p>
-        <p>No hay pedidos activos.</p>
-        <p class="empty-sub">Agregá un número de tracking manualmente o iniciá sesión en Correo Argentino.</p>
+        <p>No hay pedidos en esta pestaña.</p>
       </div>
 
       <div class="grid" id="cardsGrid"></div>

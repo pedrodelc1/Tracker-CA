@@ -132,6 +132,54 @@ body {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ─── Tabs ────────────────────────────────────────── */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #888;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-btn:hover { color: #003087; }
+
+.tab-btn.active {
+  color: #003087;
+  border-bottom-color: #003087;
+}
+
+.tab-count {
+  background: #e8edf5;
+  color: #003087;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.tab-btn.active .tab-count {
+  background: #003087;
+  color: #fff;
+}
+
 /* ─── Grid & Cards ────────────────────────────────── */
 .grid {
   display: grid;
