@@ -5,11 +5,11 @@ const PAGADOS_API_URL = "https://www.correoargentino.com.ar/MiCorreo/public/qlis
 const SEGUIMIENTO_URL = (n) => `https://www.correoargentino.com.ar/MiCorreo/public/seguimiento?numero=${n}`;
 
 const STATUS_MAP = {
-  ready:     { emoji: "🟢", text: "LISTO PARA RETIRAR", cssClass: "status-ready",     badgeClass: "badge-ready"     },
-  transit:   { emoji: "🟡", text: "EN CAMINO",           cssClass: "status-transit",   badgeClass: "badge-transit"   },
-  preparing: { emoji: "🔵", text: "PREPARANDO",          cssClass: "status-preparing", badgeClass: "badge-preparing" },
-  process:   { emoji: "⚪", text: "EN PROCESO",           cssClass: "status-process",   badgeClass: "badge-process"   },
-  cancelled: { emoji: "🔴", text: "CANCELADO",           cssClass: "status-cancelled", badgeClass: "badge-cancelled" },
+  ready:     { emoji: "🟢", text: "Listo para retirar", cssClass: "status-ready",     badgeClass: "badge-ready"     },
+  transit:   { emoji: "🟡", text: "En camino",          cssClass: "status-transit",   badgeClass: "badge-transit"   },
+  preparing: { emoji: "🔵", text: "Preparando",         cssClass: "status-preparing", badgeClass: "badge-preparing" },
+  process:   { emoji: "⚪", text: "En proceso",          cssClass: "status-process",   badgeClass: "badge-process"   },
+  cancelled: { emoji: "🔴", text: "Cancelado",          cssClass: "status-cancelled", badgeClass: "badge-cancelled" },
 };
 
 const STATUS_PRIORITY = { ready: 0, transit: 1, preparing: 2, process: 3, cancelled: 4 };
@@ -345,7 +345,7 @@ function renderCards() {
       ${pkg.source === "pagado" ? `<span class="card-tab-badge">Pagado</span>` : ""}
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
              data-tracking="${escapeHtml(pkg.tracking)}" placeholder="Sin nombre" />
-      <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
+      <div class="card-badge ${st.badgeClass}"><span class="badge-dot"></span>${st.text}</div>
       ${pkg.rawStatus && pkg.rawStatus.toLowerCase() !== (STATUS_MAP[pkg.status]?.text || "").toLowerCase()
           ? `<div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>` : ""}
       ${pkg.origen  ? `<div class="card-meta">📍 ${escapeHtml(pkg.origen)}</div>`  : ""}
