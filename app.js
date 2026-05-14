@@ -1,5 +1,6 @@
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MIS_ENVIOS_URL  = "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios";
+const PAGADOS_URL     = "https://www.correoargentino.com.ar/MiCorreo/public/listadooperaciones";
 const SEGUIMIENTO_URL = (n) => `https://www.correoargentino.com.ar/MiCorreo/public/seguimiento?numero=${n}`;
 
 const STATUS_MAP = {
@@ -12,8 +13,10 @@ const STATUS_MAP = {
 
 const STATUS_KEYWORDS = {
   ready:     ["listo para retirar", "disponible", "entregado"],
-  transit:   ["en camino", "en distribución", "en reparto", "en tránsito", "salió", "distribucion"],
-  preparing: ["preparando", "admitido", "en preparación", "en proceso de", "validado", "generado"],
+  transit:   ["en camino", "en distribución", "en reparto", "en tránsito", "salió", "distribucion",
+              "en poder del distribuidor", "intento de entrega", "en camino a"],
+  preparing: ["preparando", "admitido", "en preparación", "en proceso de", "validado", "generado",
+              "clasificaci", "en proceso"],
   cancelled: ["cancelado", "devuelto", "rechazado", "anulado"],
 };
 
@@ -101,6 +104,57 @@ async function fetchShipments() {
   return { data: shipments };
 }
 
+// ─── Fetch Pagados (listadooperaciones) ───────────────────────────────────────
+async function fetchPagados() {
+  let resp;
+  try {
+    resp = await fetch(PAGADOS_URL, { credentials: "include" });
+  } catch { return []; }
+
+  if (!resp.ok || resp.url.includes("login")) return [];
+
+  const html = await resp.text();
+  const doc  = new DOMParser().parseFromString(html, "text/html");
+
+  // Columnas: [icon, Producto, Integración, N°orden, Fecha, Seguimiento, Origen, Destinatario, Provincia, Dirección, Estado]
+  const rows = doc.querySelectorAll("table tbody tr");
+  const shipments = [];
+
+  rows.forEach((row, idx) => {
+    const tds = Array.from(row.querySelectorAll("td"));
+    if (tds.length < 8) return;
+
+    // Seguimiento está en tds[5], puede tener un botón copiar adentro — tomamos solo el texto sin el botón
+    const seguimientoCell = tds[5];
+    const tracking = seguimientoCell
+      ? (seguimientoCell.firstChild?.textContent || seguimientoCell.textContent).trim().split(/\s/)[0]
+      : "";
+
+    if (!tracking || tracking.length < 5) return;
+
+    const fecha     = getCellText(tds[4]);
+    const origen    = getCellText(tds[6]);
+    const dest      = getCellText(tds[7]);
+    const provincia = getCellText(tds[8]);
+    const rawStatus = getCellText(tds[tds.length - 1]);
+
+    shipments.push({
+      tracking,
+      label:        dest || `Envío ${idx + 1}`,
+      origen,
+      destinatario: dest,
+      entrega:      provincia,
+      detalles:     fecha ? `Fecha: ${fecha}` : "",
+      status:       normalizeStatus(rawStatus),
+      rawStatus,
+      lastDate:     fecha,
+      source:       "pagado",
+    });
+  });
+
+  return shipments;
+}
+
 // ─── Fetch estado de tracking individual (para manuales) ──────────────────────
 async function fetchTrackingStatus(trackingNumber) {
   try {
@@ -177,6 +231,7 @@ function renderCards() {
     card.innerHTML = `
       <button class="card-delete" data-idx="${idx}" title="Eliminar">✕</button>
       ${pkg.source === "manual" ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div>` : ""}
+      ${pkg.source === "pagado" ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div><span class="card-tab-badge">Pagado</span>` : ""}
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
              data-idx="${idx}" placeholder="Sin nombre" />
       <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
@@ -209,7 +264,7 @@ async function loadAndRender() {
   document.getElementById("noticeInfo").style.display   = "none";
 
   const saved  = await loadStorage();
-  const result = await fetchShipments();
+  const [result, pagados] = await Promise.all([fetchShipments(), fetchPagados()]);
 
   if (result.error === "not_logged_in") {
     document.getElementById("noticeLogin").style.display = "flex";
@@ -232,15 +287,17 @@ async function loadAndRender() {
   // Restaurar labels personalizados
   const labelMap = {};
   saved.forEach(p => { if (p.customLabel) labelMap[p.tracking] = p.customLabel; });
-  autoPackages.forEach(p => {
+  [...autoPackages, ...pagados].forEach(p => {
     if (labelMap[p.tracking]) { p.label = labelMap[p.tracking]; p.customLabel = labelMap[p.tracking]; }
   });
 
-  // Agregar manuales que no estén en auto
-  const autoIds = new Set(autoPackages.map(p => p.tracking));
-  const manuals = saved.filter(p => p.source === "manual" && !autoIds.has(p.tracking));
+  // Deduplicar pagados vs pendientes por tracking
+  const autoIds   = new Set(autoPackages.map(p => p.tracking));
+  const pagadosUniq = pagados.filter(p => !autoIds.has(p.tracking));
+  const allAutoIds  = new Set([...autoPackages, ...pagadosUniq].map(p => p.tracking));
+  const manuals   = saved.filter(p => p.source === "manual" && !allAutoIds.has(p.tracking));
 
-  packages = [...autoPackages, ...manuals];
+  packages = [...autoPackages, ...pagadosUniq, ...manuals];
   await saveStorage();
 
   document.getElementById("loadingState").style.display = "none";

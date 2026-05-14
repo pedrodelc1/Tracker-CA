@@ -216,6 +216,18 @@ body {
 .badge-process   { background: #f5f5f5; color: #616161; }
 .badge-cancelled { background: #ffebee; color: #c62828; }
 
+.card-tab-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: #fff3e0;
+  color: #e65100;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+}
+
 .card-raw-status {
   font-size: 11px;
   color: #bbb;
