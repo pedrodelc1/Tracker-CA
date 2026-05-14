@@ -162,11 +162,14 @@ async function fetchPagados() {
     const tds = Array.from(row.querySelectorAll("td"));
     if (tds.length < 6) return;
 
-    // Detectar la celda de seguimiento por patrón en lugar de índice fijo
+    // Detectar la celda de seguimiento por patrón
+    // Clonar y remover botones/iconos para limpiar el texto antes de comparar
     let tracking = "";
     let trackingIdx = -1;
     for (let i = 0; i < tds.length; i++) {
-      const txt = (tds[i].firstChild?.textContent || tds[i].textContent).trim().replace(/\s+/g, "");
+      const clone = tds[i].cloneNode(true);
+      clone.querySelectorAll("button, a, svg, i, span.sr-only").forEach(el => el.remove());
+      const txt = clone.textContent.trim().replace(/\s+/g, "");
       if (TRACKING_RE.test(txt) && txt.length > 10) {
         tracking    = txt;
         trackingIdx = i;
