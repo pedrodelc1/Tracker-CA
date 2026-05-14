@@ -346,13 +346,17 @@ function renderCards() {
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
              data-tracking="${escapeHtml(pkg.tracking)}" placeholder="Sin nombre" />
       <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
-      ${pkg.rawStatus ? `<div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>` : ""}
+      ${pkg.rawStatus && pkg.rawStatus.toLowerCase() !== (STATUS_MAP[pkg.status]?.text || "").toLowerCase()
+          ? `<div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>` : ""}
       ${pkg.origen  ? `<div class="card-meta">📍 ${escapeHtml(pkg.origen)}</div>`  : ""}
       ${pkg.entrega ? `<div class="card-meta">🏠 ${escapeHtml(pkg.entrega)}</div>` : ""}
       ${pkg.detalles? `<div class="card-meta">📦 ${escapeHtml(pkg.detalles)}</div>`: ""}
       ${historyHtml}
-      <textarea class="card-notes" data-tracking="${escapeHtml(pkg.tracking)}"
-        placeholder="📝 Agregar nota...">${escapeHtml(pkg.notes || "")}</textarea>
+      <div class="card-notes-toggle" data-tracking="${escapeHtml(pkg.tracking)}">
+        📝 ${pkg.notes ? "Ver nota" : "Agregar nota"}
+      </div>
+      <textarea class="card-notes ${pkg.notes ? "visible" : ""}" data-tracking="${escapeHtml(pkg.tracking)}"
+        placeholder="Escribí una nota...">${escapeHtml(pkg.notes || "")}</textarea>
       ${pkg.loading ? `<div class="card-loading">Actualizando...</div>` : ""}
     `;
     grid.appendChild(card);
@@ -447,6 +451,17 @@ async function refreshAll() {
 
 // ─── Eventos: grid ────────────────────────────────────────────────────────────
 document.getElementById("cardsGrid").addEventListener("click", async (e) => {
+  const toggle = e.target.closest(".card-notes-toggle");
+  if (toggle) {
+    const textarea = toggle.nextElementSibling;
+    const isOpen   = textarea.classList.toggle("visible");
+    toggle.textContent = isOpen
+      ? `📝 ${textarea.value ? "Ver nota" : "Agregar nota"}`
+      : `📝 ${textarea.value ? "Ver nota" : "Agregar nota"}`;
+    if (isOpen) textarea.focus();
+    return;
+  }
+
   const del = e.target.closest(".card-delete");
   if (!del) return;
   const idx = packages.findIndex(p => p.tracking === del.dataset.tracking);
