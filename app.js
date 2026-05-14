@@ -116,30 +116,39 @@ async function fetchPagados() {
   const html = await resp.text();
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
-  // Columnas: [icon, Producto, Integración, N°orden, Fecha, Seguimiento, Origen, Destinatario, Provincia, Dirección, Estado]
-  // El tab activo es #pendientes dentro de #myTabContent
-  let rows = doc.querySelectorAll("#pendientes table tbody tr");
+  // Buscar la tabla dentro del tab #pendientes > panel panel-default (Current Envios)
+  let rows = doc.querySelectorAll("#pendientes .panel-default table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("#pendientes table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("table.mcr-table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
+
+  fetchPagados._debug = `rows=${rows.length}`;
+
   const shipments = [];
+  const TRACKING_RE = /^[0-9A-Z]{10,}$/;
 
   rows.forEach((row, idx) => {
     const tds = Array.from(row.querySelectorAll("td"));
-    if (tds.length < 8) return;
+    if (tds.length < 6) return;
 
-    // Seguimiento está en tds[5], puede tener un botón copiar adentro — tomamos solo el texto sin el botón
-    const seguimientoCell = tds[5];
-    const tracking = seguimientoCell
-      ? (seguimientoCell.firstChild?.textContent || seguimientoCell.textContent).trim().split(/\s/)[0]
-      : "";
+    // Detectar la celda de seguimiento por patrón en lugar de índice fijo
+    let tracking = "";
+    let trackingIdx = -1;
+    for (let i = 0; i < tds.length; i++) {
+      const txt = (tds[i].firstChild?.textContent || tds[i].textContent).trim().replace(/\s+/g, "");
+      if (TRACKING_RE.test(txt) && txt.length > 10) {
+        tracking    = txt;
+        trackingIdx = i;
+        break;
+      }
+    }
 
-    if (!tracking || tracking.length < 5) return;
+    if (!tracking) return;
 
-    const fecha     = getCellText(tds[4]);
-    const origen    = getCellText(tds[6]);
-    const dest      = getCellText(tds[7]);
-    const provincia = getCellText(tds[8]);
+    const fecha     = trackingIdx > 0 ? getCellText(tds[trackingIdx - 1]) : "";
+    const origen    = getCellText(tds[trackingIdx + 1]);
+    const dest      = getCellText(tds[trackingIdx + 2]);
+    const provincia = getCellText(tds[trackingIdx + 3]);
     const rawStatus = getCellText(tds[tds.length - 1]);
 
     shipments.push({
@@ -302,6 +311,7 @@ async function loadAndRender() {
   const manuals   = saved.filter(p => p.source === "manual" && !allAutoIds.has(p.tracking));
 
   packages = [...autoPackages, ...pagadosUniq, ...manuals];
+  if (pagadosUniq.length === 0) showInfo(`Pagados: no se encontraron envíos (debug: ${fetchPagados._debug})`);
   await saveStorage();
 
   document.getElementById("loadingState").style.display = "none";
