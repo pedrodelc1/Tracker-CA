@@ -482,5 +482,19 @@ document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("modalOverlay").style.display = "none";
 });
 
+// ─── Tema oscuro/claro ────────────────────────────────────────────────────────
+function applyTheme(dark) {
+  document.body.dataset.theme = dark ? "dark" : "";
+  document.getElementById("btnTheme").textContent = dark ? "☀️" : "🌙";
+}
+
+chrome.storage.local.get(["darkMode"], ({ darkMode }) => applyTheme(!!darkMode));
+
+document.getElementById("btnTheme").addEventListener("click", () => {
+  const isDark = document.body.dataset.theme === "dark";
+  applyTheme(!isDark);
+  chrome.storage.local.set({ darkMode: !isDark });
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadAndRender();
