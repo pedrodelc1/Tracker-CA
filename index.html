@@ -14,9 +14,10 @@
         <span class="last-updated" id="lastUpdated"></span>
       </div>
       <div class="header-right">
-        <button class="btn btn-theme" id="btnTheme" title="Cambiar tema">🌙</button>
-        <button class="btn btn-secondary" id="btnAddManual">+ Agregar tracking</button>
-        <button class="btn btn-primary" id="btnRefresh">↻ Actualizar todos</button>
+        <button class="btn btn-theme"    id="btnTheme"     title="Cambiar tema">🌙</button>
+        <button class="btn btn-secondary" id="btnExport"   title="Exportar CSV">📥 CSV</button>
+        <button class="btn btn-secondary" id="btnAddManual">+ Agregar</button>
+        <button class="btn btn-primary"   id="btnRefresh"  >↻ Actualizar</button>
       </div>
     </header>
 
@@ -29,6 +30,7 @@
 
       <div class="notice notice-info" id="noticeInfo" style="display:none">
         <span id="noticeInfoText"></span>
+        <button class="notice-close" id="btnCloseInfo">✕</button>
       </div>
 
       <div id="loadingState" class="loading-state" style="display:none">
@@ -38,8 +40,17 @@
 
       <div class="tabs">
         <button class="tab-btn active" data-tab="pendientes">Pendientes <span class="tab-count" id="countPendientes"></span></button>
-        <button class="tab-btn" data-tab="pagados">Pagados <span class="tab-count" id="countPagados"></span></button>
-        <button class="tab-btn" data-tab="manuales">Manuales <span class="tab-count" id="countManuales"></span></button>
+        <button class="tab-btn"        data-tab="pagados">Pagados <span class="tab-count" id="countPagados"></span></button>
+        <button class="tab-btn"        data-tab="manuales">Manuales <span class="tab-count" id="countManuales"></span></button>
+      </div>
+
+      <div class="toolbar">
+        <input class="search-input" id="searchInput" type="search" placeholder="🔍 Buscar por nombre, destinatario..." />
+        <select class="sort-select" id="sortSelect">
+          <option value="status">Ordenar: Estado</option>
+          <option value="name">Ordenar: Nombre</option>
+          <option value="date">Ordenar: Fecha</option>
+        </select>
       </div>
 
       <div id="emptyState" class="empty-state" style="display:none">
@@ -56,12 +67,14 @@
     <div class="modal">
       <h2 class="modal-title">Agregar pedido</h2>
       <label class="modal-label">Número de tracking <span class="req">*</span></label>
-      <input class="modal-input" id="inputTracking" type="text" placeholder="Ej: AR123456789AR" />
+      <input class="modal-input" id="inputTracking" type="text" placeholder="Ej: 00015836838A73023G1E701" />
       <label class="modal-label">Nombre / Etiqueta</label>
       <input class="modal-input" id="inputLabel" type="text" placeholder="Ej: Zapatillas Nike" />
+      <label class="modal-label">Nota (opcional)</label>
+      <textarea class="modal-input modal-textarea" id="inputNote" placeholder="Ej: Llegó tarde la última vez..."></textarea>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btnModalCancel">Cancelar</button>
-        <button class="btn btn-primary" id="btnModalAdd">Agregar</button>
+        <button class="btn btn-primary"   id="btnModalAdd">Agregar</button>
       </div>
     </div>
   </div>

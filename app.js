@@ -12,10 +12,12 @@ const STATUS_MAP = {
   cancelled: { emoji: "🔴", text: "CANCELADO",           cssClass: "status-cancelled", badgeClass: "badge-cancelled" },
 };
 
+const STATUS_PRIORITY = { ready: 0, transit: 1, preparing: 2, process: 3, cancelled: 4 };
+
 const STATUS_KEYWORDS = {
   ready:     ["listo para retirar", "disponible", "entregado"],
   transit:   ["en camino", "en distribución", "en reparto", "en tránsito", "salió", "distribucion",
-              "en poder del distribuidor", "intento de entrega", "en camino a"],
+              "en poder del distribuidor", "intento de entrega"],
   preparing: ["preparando", "admitido", "en preparación", "en proceso de", "validado", "generado",
               "clasificaci", "en proceso"],
   cancelled: ["cancelado", "devuelto", "rechazado", "anulado"],
@@ -29,91 +31,98 @@ function normalizeStatus(raw = "") {
   return "process";
 }
 
-// ─── Estado en memoria ────────────────────────────────────────────────────────
-let packages   = [];
-let activeTab  = "pendientes";
+// ─── Estado ───────────────────────────────────────────────────────────────────
+let packages  = [];
+let activeTab = "pendientes";
+let searchQuery = "";
+let sortBy    = "status";
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 function loadStorage() {
   return new Promise(r => chrome.storage.local.get(["packages"], d => r(d.packages || [])));
 }
-
 function saveStorage() {
   return new Promise(r => chrome.storage.local.set({ packages }, r));
 }
 
-// ─── Fetch tabla de MiCorreo ──────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getCellText(td) {
   if (!td) return "";
   const div = td.querySelector("div");
   return (div ? div.textContent : td.textContent).trim();
 }
 
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatDate(raw) {
+  if (!raw) return "";
+  try {
+    const d = new Date(raw);
+    if (isNaN(d)) return raw;
+    return d.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
+  } catch { return raw; }
+}
+
+function formatHistoryDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
+
+// ─── Fetch Pendientes ─────────────────────────────────────────────────────────
 async function fetchShipments() {
   let resp;
   try {
     resp = await fetch(MIS_ENVIOS_URL, { credentials: "include" });
-  } catch (e) {
-    return { error: "network_error", message: e.message };
-  }
+  } catch (e) { return { error: "network_error" }; }
 
-  if (!resp.ok || resp.url.includes("login") || resp.url.includes("acceso")) {
-    return { error: "not_logged_in" };
-  }
+  if (!resp.ok || resp.url.includes("login") || resp.url.includes("acceso")) return { error: "not_logged_in" };
 
   const html = await resp.text();
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
-  const loginForm = doc.querySelector("form[action*='login'], input[name='username'], input[name='j_username']");
-  if (loginForm) return { error: "not_logged_in" };
+  if (doc.querySelector("form[action*='login'], input[name='username'], input[name='j_username']")) {
+    return { error: "not_logged_in" };
+  }
 
-  // Intentar con selector principal, luego fallback
   let rows = doc.querySelectorAll("table.mcr-table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
-
-  // Si sigue sin filas, la sesión expiró sin redirigir
   if (!rows.length) return { error: "not_logged_in" };
 
   const shipments = [];
   rows.forEach((row, idx) => {
     const tds = Array.from(row.querySelectorAll("td"));
     if (tds.length < 5) return;
-
     const nOrden       = getCellText(tds[3]);
     const origen       = getCellText(tds[4]);
     const destinatario = getCellText(tds[5]);
     const entrega      = getCellText(tds[6]);
     const detalles     = getCellText(tds[7]);
     const rawStatus    = getCellText(tds[tds.length - 1]);
-
-    const trackingId = (nOrden && nOrden !== "-" && nOrden !== "")
+    const trackingId   = (nOrden && nOrden !== "-" && nOrden !== "")
       ? nOrden
       : `envio-${origen}-${destinatario}-${idx}`.replace(/\s+/g, "_");
-
     shipments.push({
-      tracking: trackingId,
-      label: destinatario || `Envío ${idx + 1}`,
+      tracking: trackingId, label: destinatario || `Envío ${idx + 1}`,
       origen, destinatario, entrega, detalles,
-      status:    normalizeStatus(rawStatus),
-      rawStatus,
-      lastDate:  "",
-      source:    "auto",
+      status: normalizeStatus(rawStatus), rawStatus, lastDate: "", source: "auto",
     });
   });
-
   return { data: shipments };
 }
 
-// ─── Fetch Pagados (listadooperaciones) ───────────────────────────────────────
+// ─── Fetch Pagados ────────────────────────────────────────────────────────────
 async function fetchPagados() {
-  // Paso 1: obtener el CSRF token de la página
   let pageResp;
   try {
     pageResp = await fetch(PAGADOS_URL, { credentials: "include" });
   } catch { return []; }
-
   if (!pageResp.ok || pageResp.url.includes("login")) return [];
 
   const pageHtml = await pageResp.text();
@@ -121,12 +130,10 @@ async function fetchPagados() {
 
   const token =
     pageDoc.querySelector("meta[name='csrf-token']")?.getAttribute("content") ||
-    pageDoc.querySelector("input[name='_token']")?.value ||
-    "";
+    pageDoc.querySelector("input[name='_token']")?.value || "";
 
   if (!token) { fetchPagados._debug = "no_token"; return []; }
 
-  // Paso 2: POST al endpoint AJAX con el token
   let resp;
   try {
     const body = new URLSearchParams({
@@ -136,19 +143,16 @@ async function fetchPagados() {
       pag: "0", sortc: "FECHA_CREACION", sortr: "1",
     });
     resp = await fetch(PAGADOS_API_URL, {
-      method: "POST",
-      credentials: "include",
+      method: "POST", credentials: "include",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
     });
   } catch { return []; }
-
   if (!resp.ok) return [];
 
   const html = await resp.text();
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
-  // Buscar la tabla dentro del tab #pendientes > panel panel-default (Current Envios)
   let rows = doc.querySelectorAll("#pendientes .panel-default table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#pendientes table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
@@ -163,21 +167,13 @@ async function fetchPagados() {
     const tds = Array.from(row.querySelectorAll("td"));
     if (tds.length < 6) return;
 
-    // Detectar la celda de seguimiento por patrón
-    // Clonar y remover botones/iconos para limpiar el texto antes de comparar
-    let tracking = "";
-    let trackingIdx = -1;
+    let tracking = "", trackingIdx = -1;
     for (let i = 0; i < tds.length; i++) {
       const clone = tds[i].cloneNode(true);
       clone.querySelectorAll("button, a, svg, i, span.sr-only").forEach(el => el.remove());
       const txt = clone.textContent.trim().replace(/\s+/g, "");
-      if (TRACKING_RE.test(txt) && txt.length > 10) {
-        tracking    = txt;
-        trackingIdx = i;
-        break;
-      }
+      if (TRACKING_RE.test(txt) && txt.length > 10) { tracking = txt; trackingIdx = i; break; }
     }
-
     if (!tracking) return;
 
     const fecha     = trackingIdx > 0 ? getCellText(tds[trackingIdx - 1]) : "";
@@ -187,26 +183,18 @@ async function fetchPagados() {
     const rawStatus = getCellText(tds[tds.length - 1]);
 
     shipments.push({
-      tracking,
-      label:        dest || `Envío ${idx + 1}`,
-      origen,
-      destinatario: dest,
-      entrega:      provincia,
-      detalles:     fecha ? `Fecha: ${fecha}` : "",
-      status:       normalizeStatus(rawStatus),
-      rawStatus,
-      lastDate:     fecha,
-      source:       "pagado",
+      tracking, label: dest || `Envío ${idx + 1}`,
+      origen, destinatario: dest, entrega: provincia,
+      detalles: fecha ? `Fecha: ${fecha}` : "",
+      status: normalizeStatus(rawStatus), rawStatus, lastDate: fecha, source: "pagado",
     });
   });
-
   return shipments;
 }
 
-// ─── Fetch estado de tracking individual (para manuales) ──────────────────────
+// ─── Fetch tracking individual (manuales) ────────────────────────────────────
 async function fetchTrackingStatus(trackingNumber) {
   try {
-    // Intentar primero la API JSON
     const apiResp = await fetch(
       `https://api.correoargentino.com.ar/micorreo/v1/shipments/${trackingNumber}`,
       { credentials: "include" }
@@ -217,59 +205,111 @@ async function fetchTrackingStatus(trackingNumber) {
       if (raw) return { rawStatus: raw, status: normalizeStatus(raw) };
     }
   } catch {}
-
   try {
-    // Fallback: parsear la página de seguimiento HTML
     const resp = await fetch(SEGUIMIENTO_URL(trackingNumber), { credentials: "include" });
     if (!resp.ok) return null;
     const html = await resp.text();
     const doc  = new DOMParser().parseFromString(html, "text/html");
-
-    // Buscar el estado en distintos selectores posibles
-    const selectors = [
-      ".estado-envio", ".tracking-status", ".status-text",
-      "[class*='estado']", "[class*='status']",
-      "table tbody tr:last-child td:last-child",
-    ];
-    for (const sel of selectors) {
+    for (const sel of [".estado-envio", ".tracking-status", "[class*='estado']", "[class*='status']"]) {
       const el = doc.querySelector(sel);
       if (el) {
         const raw = el.textContent.trim();
-        if (raw.length > 2 && raw.length < 80) {
-          return { rawStatus: raw, status: normalizeStatus(raw) };
-        }
+        if (raw.length > 2 && raw.length < 80) return { rawStatus: raw, status: normalizeStatus(raw) };
       }
     }
   } catch {}
-
   return null;
 }
 
-// ─── Render ───────────────────────────────────────────────────────────────────
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// ─── Notificaciones ───────────────────────────────────────────────────────────
+function notifyStatusChanges(oldMap, newPackages) {
+  newPackages.forEach(p => {
+    const oldStatus = oldMap[p.tracking];
+    if (!oldStatus || oldStatus === p.status) return;
+    const st = STATUS_MAP[p.status] || STATUS_MAP.process;
+    chrome.notifications.create(`status-${p.tracking}-${Date.now()}`, {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon48.png"),
+      title: "📦 Estado actualizado",
+      message: `${p.label}: ${st.emoji} ${st.text}`,
+    });
+  });
 }
 
-function updateTabCounts() {
-  const counts = { pendientes: 0, pagados: 0, manuales: 0 };
-  packages.forEach(p => {
-    if (p.source === "auto")    counts.pendientes++;
-    else if (p.source === "pagado")  counts.pagados++;
-    else if (p.source === "manual")  counts.manuales++;
+// ─── Historial de estados ─────────────────────────────────────────────────────
+function mergeFromStored(storedMap, pkg) {
+  const old = storedMap[pkg.tracking];
+  if (!old) return;
+  if (old.customLabel) { pkg.label = old.customLabel; pkg.customLabel = old.customLabel; }
+  if (old.notes) pkg.notes = old.notes;
+  pkg.history = old.history || [];
+  if (old.status && old.status !== pkg.status) {
+    pkg.history = [
+      ...pkg.history,
+      { status: old.status, rawStatus: old.rawStatus || "", date: new Date().toISOString() },
+    ].slice(-10);
+  }
+}
+
+// ─── Filtrar y ordenar ────────────────────────────────────────────────────────
+function getVisiblePackages() {
+  const sourceMap = { pendientes: "auto", pagados: "pagado", manuales: "manual" };
+  let visible = packages.filter(p => p.source === sourceMap[activeTab]);
+
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    visible = visible.filter(p =>
+      (p.label || "").toLowerCase().includes(q) ||
+      (p.tracking || "").toLowerCase().includes(q) ||
+      (p.destinatario || "").toLowerCase().includes(q) ||
+      (p.entrega || "").toLowerCase().includes(q)
+    );
+  }
+
+  visible.sort((a, b) => {
+    if (sortBy === "status") return (STATUS_PRIORITY[a.status] ?? 9) - (STATUS_PRIORITY[b.status] ?? 9);
+    if (sortBy === "name")   return (a.label || "").localeCompare(b.label || "", "es");
+    if (sortBy === "date")   return new Date(b.lastDate || 0) - new Date(a.lastDate || 0);
+    return 0;
   });
-  document.getElementById("countPendientes").textContent = counts.pendientes || "";
-  document.getElementById("countPagados").textContent    = counts.pagados    || "";
-  document.getElementById("countManuales").textContent   = counts.manuales   || "";
+
+  return visible;
+}
+
+// ─── Exportar CSV ─────────────────────────────────────────────────────────────
+function exportCSV() {
+  const BOM  = "﻿";
+  const cols = ["Tracking", "Nombre", "Estado", "Descripción", "Origen", "Entrega", "Detalles", "Nota", "Fuente"];
+  const rows = packages.map(p => [
+    p.tracking, p.label,
+    STATUS_MAP[p.status]?.text || p.status,
+    p.rawStatus || "", p.origen || "", p.entrega || "", p.detalles || "",
+    p.notes || "", p.source,
+  ]);
+  const csv  = BOM + [cols, ...rows]
+    .map(r => r.map(v => `"${String(v || "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const url  = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `correo-tracker-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function updateTabCounts() {
+  const c = { auto: 0, pagado: 0, manual: 0 };
+  packages.forEach(p => { if (c[p.source] !== undefined) c[p.source]++; });
+  document.getElementById("countPendientes").textContent = c.auto   || "";
+  document.getElementById("countPagados").textContent    = c.pagado || "";
+  document.getElementById("countManuales").textContent   = c.manual || "";
 }
 
 function renderCards() {
-  const grid  = document.getElementById("cardsGrid");
-  const empty = document.getElementById("emptyState");
-
-  const sourceMap = { pendientes: "auto", pagados: "pagado", manuales: "manual" };
-  const visible   = packages.filter(p => p.source === sourceMap[activeTab]);
+  const grid    = document.getElementById("cardsGrid");
+  const empty   = document.getElementById("emptyState");
+  const visible = getVisiblePackages();
 
   updateTabCounts();
 
@@ -278,35 +318,43 @@ function renderCards() {
     empty.style.display = "block";
     return;
   }
-
   empty.style.display = "none";
   grid.innerHTML = "";
 
-  // Usar índices globales para que eliminar/editar funcionen correctamente
-  packages.forEach((pkg, idx) => {
-    if (pkg.source !== sourceMap[activeTab]) return;
+  visible.forEach(pkg => {
     const st   = STATUS_MAP[pkg.status] || STATUS_MAP.process;
     const card = document.createElement("div");
     card.className = `card ${st.cssClass}`;
+    card.dataset.tracking = pkg.tracking;
 
-    const extraLines = [
-      pkg.origen     ? `<div class="card-meta">📍 Origen: ${escapeHtml(pkg.origen)}</div>`   : "",
-      pkg.entrega    ? `<div class="card-meta">🏠 Entrega: ${escapeHtml(pkg.entrega)}</div>` : "",
-      pkg.detalles   ? `<div class="card-meta">📦 ${escapeHtml(pkg.detalles)}</div>`          : "",
-    ].join("");
+    const historyHtml = pkg.history?.length ? `
+      <details class="card-history">
+        <summary>Historial (${pkg.history.length})</summary>
+        ${[...pkg.history].reverse().map(h => {
+          const hs = STATUS_MAP[h.status] || STATUS_MAP.process;
+          return `<div class="history-item">
+            ${hs.emoji} ${escapeHtml(h.rawStatus || hs.text)}
+            <span class="history-date">${formatHistoryDate(h.date)}</span>
+          </div>`;
+        }).join("")}
+      </details>` : "";
 
     card.innerHTML = `
-      <button class="card-delete" data-idx="${idx}" title="Eliminar">✕</button>
-      ${pkg.source === "manual" ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div>` : ""}
-      ${pkg.source === "pagado" ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div><span class="card-tab-badge">Pagado</span>` : ""}
+      <button class="card-delete" data-tracking="${escapeHtml(pkg.tracking)}" title="Eliminar">✕</button>
+      ${(pkg.source === "manual" || pkg.source === "pagado") ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div>` : ""}
+      ${pkg.source === "pagado" ? `<span class="card-tab-badge">Pagado</span>` : ""}
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
-             data-idx="${idx}" placeholder="Sin nombre" />
+             data-tracking="${escapeHtml(pkg.tracking)}" placeholder="Sin nombre" />
       <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
       ${pkg.rawStatus ? `<div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>` : ""}
-      ${extraLines}
+      ${pkg.origen  ? `<div class="card-meta">📍 ${escapeHtml(pkg.origen)}</div>`  : ""}
+      ${pkg.entrega ? `<div class="card-meta">🏠 ${escapeHtml(pkg.entrega)}</div>` : ""}
+      ${pkg.detalles? `<div class="card-meta">📦 ${escapeHtml(pkg.detalles)}</div>`: ""}
+      ${historyHtml}
+      <textarea class="card-notes" data-tracking="${escapeHtml(pkg.tracking)}"
+        placeholder="📝 Agregar nota...">${escapeHtml(pkg.notes || "")}</textarea>
       ${pkg.loading ? `<div class="card-loading">Actualizando...</div>` : ""}
     `;
-
     grid.appendChild(card);
   });
 }
@@ -317,9 +365,8 @@ function setLastUpdated() {
 }
 
 function showInfo(msg) {
-  const el = document.getElementById("noticeInfo");
   document.getElementById("noticeInfoText").textContent = msg;
-  el.style.display = "flex";
+  document.getElementById("noticeInfo").style.display = "flex";
 }
 
 // ─── Lógica principal ─────────────────────────────────────────────────────────
@@ -340,7 +387,6 @@ async function loadAndRender() {
     renderCards();
     return;
   }
-
   if (result.error) {
     showInfo(`Error de red (${result.error}). Mostrando pedidos guardados.`);
     packages = saved;
@@ -350,24 +396,32 @@ async function loadAndRender() {
   }
 
   const autoPackages = result.data || [];
+  const storedMap    = {};
+  saved.forEach(p => storedMap[p.tracking] = p);
 
-  // Restaurar labels personalizados
-  const labelMap = {};
-  saved.forEach(p => { if (p.customLabel) labelMap[p.tracking] = p.customLabel; });
-  [...autoPackages, ...pagados].forEach(p => {
-    if (labelMap[p.tracking]) { p.label = labelMap[p.tracking]; p.customLabel = labelMap[p.tracking]; }
-  });
+  // Snapshot de estados anteriores para notificaciones
+  const oldStatusMap = {};
+  saved.forEach(p => oldStatusMap[p.tracking] = p.status);
 
-  // Deduplicar pagados vs pendientes por tracking
-  const autoIds   = new Set(autoPackages.map(p => p.tracking));
+  // Fusionar datos auto + pagados
+  const autoIds     = new Set(autoPackages.map(p => p.tracking));
   const pagadosUniq = pagados.filter(p => !autoIds.has(p.tracking));
   const allAutoIds  = new Set([...autoPackages, ...pagadosUniq].map(p => p.tracking));
-  const manuals   = saved.filter(p => p.source === "manual" && !allAutoIds.has(p.tracking));
+  const manuals     = saved.filter(p => p.source === "manual" && !allAutoIds.has(p.tracking));
 
   packages = [...autoPackages, ...pagadosUniq, ...manuals];
-  if (pagadosUniq.length === 0) showInfo(`Pagados: no se encontraron envíos (debug: ${fetchPagados._debug})`);
-  await saveStorage();
 
+  // Aplicar datos guardados (labels, notas, historial)
+  packages.forEach(p => mergeFromStored(storedMap, p));
+
+  // Notificar cambios de estado
+  notifyStatusChanges(oldStatusMap, packages);
+
+  if (pagadosUniq.length === 0 && fetchPagados._debug) {
+    showInfo(`Pagados: ${fetchPagados._debug === "no_token" ? "no se encontró token CSRF" : `no se encontraron envíos (${fetchPagados._debug})`}`);
+  }
+
+  await saveStorage();
   document.getElementById("loadingState").style.display = "none";
   renderCards();
   setLastUpdated();
@@ -375,66 +429,84 @@ async function loadAndRender() {
 
 async function refreshAll() {
   const btn = document.getElementById("btnRefresh");
-  btn.disabled = true;
-  btn.textContent = "Actualizando...";
+  btn.disabled = true; btn.textContent = "Actualizando...";
 
-  // Actualizar estado de los manuales en paralelo
   const manuals = packages.filter(p => p.source === "manual");
   manuals.forEach(p => { p.loading = true; });
   if (manuals.length) renderCards();
 
   await Promise.all(manuals.map(async (pkg) => {
     const result = await fetchTrackingStatus(pkg.tracking);
-    if (result) {
-      pkg.status    = result.status;
-      pkg.rawStatus = result.rawStatus;
-    }
+    if (result) { pkg.status = result.status; pkg.rawStatus = result.rawStatus; }
     pkg.loading = false;
   }));
 
   await loadAndRender();
-
-  btn.disabled = false;
-  btn.textContent = "↻ Actualizar todos";
+  btn.disabled = false; btn.textContent = "↻ Actualizar";
 }
 
 // ─── Eventos: grid ────────────────────────────────────────────────────────────
 document.getElementById("cardsGrid").addEventListener("click", async (e) => {
   const del = e.target.closest(".card-delete");
   if (!del) return;
-  packages.splice(Number(del.dataset.idx), 1);
+  const idx = packages.findIndex(p => p.tracking === del.dataset.tracking);
+  if (idx === -1) return;
+  packages.splice(idx, 1);
   await saveStorage();
   renderCards();
 });
 
 document.getElementById("cardsGrid").addEventListener("change", async (e) => {
-  if (!e.target.classList.contains("card-label")) return;
-  const idx = Number(e.target.dataset.idx);
-  packages[idx].label       = e.target.value;
-  packages[idx].customLabel = e.target.value;
-  await saveStorage();
+  const label = e.target.closest(".card-label");
+  const notes = e.target.closest(".card-notes");
+  if (label) {
+    const pkg = packages.find(p => p.tracking === label.dataset.tracking);
+    if (pkg) { pkg.label = label.value; pkg.customLabel = label.value; await saveStorage(); }
+  }
+  if (notes) {
+    const pkg = packages.find(p => p.tracking === notes.dataset.tracking);
+    if (pkg) { pkg.notes = notes.value; await saveStorage(); }
+  }
 });
 
-// ─── Botones ──────────────────────────────────────────────────────────────────
-document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+// ─── Toolbar: búsqueda y orden ────────────────────────────────────────────────
+document.getElementById("searchInput").addEventListener("input", (e) => {
+  searchQuery = e.target.value.trim();
+  renderCards();
+});
 
+document.getElementById("sortSelect").addEventListener("change", (e) => {
+  sortBy = e.target.value;
+  renderCards();
+});
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
+    document.getElementById("searchInput").value = "";
+    searchQuery = "";
     renderCards();
   });
 });
 
+// ─── Botones header ───────────────────────────────────────────────────────────
+document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+document.getElementById("btnExport").addEventListener("click", exportCSV);
 document.getElementById("btnLogin").addEventListener("click", () => {
   chrome.tabs.create({ url: "https://www.correoargentino.com.ar/MiCorreo/public/login" });
 });
+document.getElementById("btnCloseInfo").addEventListener("click", () => {
+  document.getElementById("noticeInfo").style.display = "none";
+});
 
-// ─── Modal: agregar tracking manual ──────────────────────────────────────────
+// ─── Modal ────────────────────────────────────────────────────────────────────
 document.getElementById("btnAddManual").addEventListener("click", () => {
   document.getElementById("inputTracking").value = "";
   document.getElementById("inputLabel").value    = "";
+  document.getElementById("inputNote").value     = "";
   document.getElementById("modalOverlay").style.display = "flex";
   setTimeout(() => document.getElementById("inputTracking").focus(), 50);
 });
@@ -446,33 +518,24 @@ document.getElementById("btnModalCancel").addEventListener("click", () => {
 document.getElementById("btnModalAdd").addEventListener("click", async () => {
   const tracking = document.getElementById("inputTracking").value.trim();
   const label    = document.getElementById("inputLabel").value.trim();
+  const note     = document.getElementById("inputNote").value.trim();
 
   if (!tracking) { document.getElementById("inputTracking").focus(); return; }
   if (packages.some(p => p.tracking === tracking)) { alert("Ese tracking ya existe."); return; }
 
   const pkg = {
-    tracking,
-    label:       label || tracking,
-    customLabel: label || "",
-    status:      "process",
-    rawStatus:   "Consultando...",
-    loading:     true,
-    source:      "manual",
+    tracking, label: label || tracking, customLabel: label || "",
+    notes: note, status: "process", rawStatus: "Consultando...",
+    loading: true, source: "manual", history: [],
   };
-
   packages.unshift(pkg);
   await saveStorage();
   renderCards();
   document.getElementById("modalOverlay").style.display = "none";
 
-  // Consultar estado inmediatamente
   const result = await fetchTrackingStatus(tracking);
-  if (result) {
-    pkg.status    = result.status;
-    pkg.rawStatus = result.rawStatus;
-  } else {
-    pkg.rawStatus = "";
-  }
+  if (result) { pkg.status = result.status; pkg.rawStatus = result.rawStatus; }
+  else        { pkg.rawStatus = ""; }
   pkg.loading = false;
   await saveStorage();
   renderCards();
@@ -480,6 +543,11 @@ document.getElementById("btnModalAdd").addEventListener("click", async () => {
 
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") document.getElementById("modalOverlay").style.display = "none";
+});
+
+// ─── Auto-refresh desde background ───────────────────────────────────────────
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "auto-refresh") refreshAll();
 });
 
 // ─── Tema oscuro/claro ────────────────────────────────────────────────────────

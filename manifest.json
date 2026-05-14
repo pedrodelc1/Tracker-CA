@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Correo Argentino Tracker",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Trackea tus pedidos de Correo Argentino desde una página dedicada",
   "action": {
     "default_title": "Correo Tracker",
@@ -17,7 +17,9 @@
   "permissions": [
     "storage",
     "cookies",
-    "tabs"
+    "tabs",
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://www.correoargentino.com.ar/*",
