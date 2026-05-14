@@ -95,6 +95,14 @@ body {
 
 .notice a { color: #003087; font-weight: 600; }
 
+.btn-login {
+  margin-left: auto;
+  background: #795548;
+  color: #fff;
+  white-space: nowrap;
+}
+.btn-login:hover { background: #5d4037; }
+
 .notice-info {
   background: #e3f2fd;
   border-color: #90caf9;

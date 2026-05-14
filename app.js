@@ -146,7 +146,7 @@ function renderCards() {
 
     card.innerHTML = `
       <button class="card-delete" data-idx="${idx}" title="Eliminar">✕</button>
-      <div class="card-tracking">${escapeHtml(pkg.tracking)}</div>
+      ${pkg.source === "manual" ? `<div class="card-tracking">${escapeHtml(pkg.tracking)}</div>` : ""}
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
              data-idx="${idx}" placeholder="Sin nombre" />
       <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
@@ -250,6 +250,10 @@ document.getElementById("cardsGrid").addEventListener("change", async (e) => {
 
 // ─── Botones ──────────────────────────────────────────────────────────────────
 document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+
+document.getElementById("btnLogin").addEventListener("click", () => {
+  chrome.tabs.create({ url: "https://www.correoargentino.com.ar/MiCorreo/public/login" });
+});
 
 // ─── Modal: agregar tracking manual ──────────────────────────────────────────
 document.getElementById("btnAddManual").addEventListener("click", () => {
