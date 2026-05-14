@@ -1,6 +1,7 @@
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const MIS_ENVIOS_URL  = "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios";
 const PAGADOS_URL     = "https://www.correoargentino.com.ar/MiCorreo/public/listadooperaciones";
+const PAGADOS_API_URL = "https://www.correoargentino.com.ar/MiCorreo/public/qlistadoget_operaciones";
 const SEGUIMIENTO_URL = (n) => `https://www.correoargentino.com.ar/MiCorreo/public/seguimiento?numero=${n}`;
 
 const STATUS_MAP = {
@@ -106,12 +107,42 @@ async function fetchShipments() {
 
 // ─── Fetch Pagados (listadooperaciones) ───────────────────────────────────────
 async function fetchPagados() {
-  let resp;
+  // Paso 1: obtener el CSRF token de la página
+  let pageResp;
   try {
-    resp = await fetch(PAGADOS_URL, { credentials: "include" });
+    pageResp = await fetch(PAGADOS_URL, { credentials: "include" });
   } catch { return []; }
 
-  if (!resp.ok || resp.url.includes("login")) return [];
+  if (!pageResp.ok || pageResp.url.includes("login")) return [];
+
+  const pageHtml = await pageResp.text();
+  const pageDoc  = new DOMParser().parseFromString(pageHtml, "text/html");
+
+  const token =
+    pageDoc.querySelector("meta[name='csrf-token']")?.getAttribute("content") ||
+    pageDoc.querySelector("input[name='_token']")?.value ||
+    "";
+
+  if (!token) { fetchPagados._debug = "no_token"; return []; }
+
+  // Paso 2: POST al endpoint AJAX con el token
+  let resp;
+  try {
+    const body = new URLSearchParams({
+      _token: token, fdesde: "", fhasta: "", tn: "",
+      provincia_orig: "", provincia_dest: "",
+      sucu_orig: "", sucu_dest: "", destino_nombre: "",
+      pag: "0", sortc: "FECHA_CREACION", sortr: "1",
+    });
+    resp = await fetch(PAGADOS_API_URL, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch { return []; }
+
+  if (!resp.ok) return [];
 
   const html = await resp.text();
   const doc  = new DOMParser().parseFromString(html, "text/html");
