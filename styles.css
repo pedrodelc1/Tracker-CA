@@ -22,16 +22,19 @@
   --radius-sm:  8px;
   --radius-xs:  6px;
 
-  --s-ready:    #16a34a;
-  --s-ready-bg: #f0fdf4;
-  --s-transit:  #d97706;
-  --s-transit-bg: #fffbeb;
-  --s-prep:     #2563eb;
-  --s-prep-bg:  #eff6ff;
-  --s-proc:     #6b7280;
-  --s-proc-bg:  #f9fafb;
-  --s-cancel:   #dc2626;
-  --s-cancel-bg:#fef2f2;
+  --s-ready:         #16a34a; --s-ready-bg:        #f0fdf4;
+  --s-delivered:     #059669; --s-delivered-bg:    #ecfdf5;
+  --s-attempted:     #7c3aed; --s-attempted-bg:    #f5f3ff;
+  --s-distributor:   #ea580c; --s-distributor-bg:  #fff7ed;
+  --s-transit:       #d97706; --s-transit-bg:      #fffbeb;
+  --s-sorting:       #0284c7; --s-sorting-bg:      #f0f9ff;
+  --s-preimposed:    #4f46e5; --s-preimposed-bg:   #eef2ff;
+  --s-admitted:      #0d9488; --s-admitted-bg:     #f0fdfa;
+  --s-prep:          #2563eb; --s-prep-bg:         #eff6ff;
+  --s-validated:     #475569; --s-validated-bg:    #f8fafc;
+  --s-proc:          #6b7280; --s-proc-bg:         #f9fafb;
+  --s-returned:      #b45309; --s-returned-bg:     #fef3c7;
+  --s-cancel:        #dc2626; --s-cancel-bg:       #fef2f2;
 
   --input-bg:   #ffffff;
   --modal-bg:   rgba(15,16,30,0.5);
@@ -60,16 +63,19 @@
   --shadow-md:  0 4px 12px rgba(0,0,0,0.4);
   --shadow-lg:  0 12px 32px rgba(0,0,0,0.6);
 
-  --s-ready:    #4ade80;
-  --s-ready-bg: #0a1f10;
-  --s-transit:  #fbbf24;
-  --s-transit-bg: #1c1600;
-  --s-prep:     #60a5fa;
-  --s-prep-bg:  #0a1628;
-  --s-proc:     #9ca3af;
-  --s-proc-bg:  #111318;
-  --s-cancel:   #f87171;
-  --s-cancel-bg:#1f0a0a;
+  --s-ready:         #4ade80; --s-ready-bg:        #091a0e;
+  --s-delivered:     #34d399; --s-delivered-bg:    #071a12;
+  --s-attempted:     #a78bfa; --s-attempted-bg:    #160d2a;
+  --s-distributor:   #fb923c; --s-distributor-bg:  #1e0e00;
+  --s-transit:       #fbbf24; --s-transit-bg:      #1c1200;
+  --s-sorting:       #38bdf8; --s-sorting-bg:      #071620;
+  --s-preimposed:    #818cf8; --s-preimposed-bg:   #0f1030;
+  --s-admitted:      #2dd4bf; --s-admitted-bg:     #071816;
+  --s-prep:          #60a5fa; --s-prep-bg:         #071428;
+  --s-validated:     #94a3b8; --s-validated-bg:    #0f1118;
+  --s-proc:          #9ca3af; --s-proc-bg:         #111318;
+  --s-returned:      #fcd34d; --s-returned-bg:     #1c1400;
+  --s-cancel:        #f87171; --s-cancel-bg:       #1f0808;
 
   --input-bg:   #0e0f1a;
   --modal-bg:   rgba(0,0,0,0.7);
@@ -329,11 +335,19 @@ body {
   border-radius: 0 0 2px 2px;
   background: var(--border);
 }
-.card.status-ready::before    { background: var(--s-ready); }
-.card.status-transit::before  { background: var(--s-transit); }
-.card.status-preparing::before{ background: var(--s-prep); }
-.card.status-process::before  { background: var(--s-proc); }
-.card.status-cancelled::before{ background: var(--s-cancel); }
+.card.status-ready::before       { background: var(--s-ready); }
+.card.status-delivered::before   { background: var(--s-delivered); }
+.card.status-attempted::before   { background: var(--s-attempted); }
+.card.status-distributor::before { background: var(--s-distributor); }
+.card.status-transit::before     { background: var(--s-transit); }
+.card.status-sorting::before     { background: var(--s-sorting); }
+.card.status-preimposed::before  { background: var(--s-preimposed); }
+.card.status-admitted::before    { background: var(--s-admitted); }
+.card.status-preparing::before   { background: var(--s-prep); }
+.card.status-validated::before   { background: var(--s-validated); }
+.card.status-process::before     { background: var(--s-proc); }
+.card.status-returned::before    { background: var(--s-returned); }
+.card.status-cancelled::before   { background: var(--s-cancel); }
 
 .card-delete {
   position: absolute; top: 12px; right: 12px;
@@ -384,22 +398,37 @@ body {
   text-transform: uppercase;
 }
 
-.badge-ready     { background: var(--s-ready-bg);   color: var(--s-ready);   }
-.badge-transit   { background: var(--s-transit-bg);  color: var(--s-transit); }
-.badge-preparing { background: var(--s-prep-bg);     color: var(--s-prep);    }
-.badge-process   { background: var(--s-proc-bg);     color: var(--s-proc);    border: 1px solid var(--border); }
-.badge-cancelled { background: var(--s-cancel-bg);   color: var(--s-cancel);  }
+.badge-ready       { background: var(--s-ready-bg);       color: var(--s-ready);       }
+.badge-delivered   { background: var(--s-delivered-bg);   color: var(--s-delivered);   }
+.badge-attempted   { background: var(--s-attempted-bg);   color: var(--s-attempted);   }
+.badge-distributor { background: var(--s-distributor-bg); color: var(--s-distributor); }
+.badge-transit     { background: var(--s-transit-bg);     color: var(--s-transit);     }
+.badge-sorting     { background: var(--s-sorting-bg);     color: var(--s-sorting);     }
+.badge-preimposed  { background: var(--s-preimposed-bg);  color: var(--s-preimposed);  }
+.badge-admitted    { background: var(--s-admitted-bg);    color: var(--s-admitted);    }
+.badge-preparing   { background: var(--s-prep-bg);        color: var(--s-prep);        }
+.badge-validated   { background: var(--s-validated-bg);   color: var(--s-validated);   border: 1px solid var(--border); }
+.badge-process     { background: var(--s-proc-bg);        color: var(--s-proc);        border: 1px solid var(--border); }
+.badge-returned    { background: var(--s-returned-bg);    color: var(--s-returned);    }
+.badge-cancelled   { background: var(--s-cancel-bg);      color: var(--s-cancel);      }
 
-/* Status dot instead of emoji */
 .badge-dot {
   width: 6px; height: 6px; border-radius: 50%;
   display: inline-block; flex-shrink: 0;
 }
-.badge-ready     .badge-dot { background: var(--s-ready); box-shadow: 0 0 0 2px rgba(22,163,74,0.25); }
-.badge-transit   .badge-dot { background: var(--s-transit); }
-.badge-preparing .badge-dot { background: var(--s-prep); }
-.badge-process   .badge-dot { background: var(--s-proc); }
-.badge-cancelled .badge-dot { background: var(--s-cancel); }
+.badge-ready       .badge-dot { background: var(--s-ready);       box-shadow: 0 0 0 2px rgba(22,163,74,0.3); }
+.badge-delivered   .badge-dot { background: var(--s-delivered);   }
+.badge-attempted   .badge-dot { background: var(--s-attempted);   }
+.badge-distributor .badge-dot { background: var(--s-distributor); }
+.badge-transit     .badge-dot { background: var(--s-transit);     }
+.badge-sorting     .badge-dot { background: var(--s-sorting);     }
+.badge-preimposed  .badge-dot { background: var(--s-preimposed);  }
+.badge-admitted    .badge-dot { background: var(--s-admitted);    }
+.badge-preparing   .badge-dot { background: var(--s-prep);        }
+.badge-validated   .badge-dot { background: var(--s-validated);   }
+.badge-process     .badge-dot { background: var(--s-proc);        }
+.badge-returned    .badge-dot { background: var(--s-returned);    }
+.badge-cancelled   .badge-dot { background: var(--s-cancel);      }
 
 .card-tab-badge {
   display: inline-block; font-size: 10px; font-weight: 700;

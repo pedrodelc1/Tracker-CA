@@ -5,27 +5,46 @@ const PAGADOS_API_URL = "https://www.correoargentino.com.ar/MiCorreo/public/qlis
 const SEGUIMIENTO_URL = (n) => `https://www.correoargentino.com.ar/MiCorreo/public/seguimiento?numero=${n}`;
 
 const STATUS_MAP = {
-  ready:     { emoji: "🟢", text: "Listo para retirar", cssClass: "status-ready",     badgeClass: "badge-ready"     },
-  transit:   { emoji: "🟡", text: "En camino",          cssClass: "status-transit",   badgeClass: "badge-transit"   },
-  preparing: { emoji: "🔵", text: "Preparando",         cssClass: "status-preparing", badgeClass: "badge-preparing" },
-  process:   { emoji: "⚪", text: "En proceso",          cssClass: "status-process",   badgeClass: "badge-process"   },
-  cancelled: { emoji: "🔴", text: "Cancelado",          cssClass: "status-cancelled", badgeClass: "badge-cancelled" },
+  ready:        { text: "Listo para retirar",    cssClass: "status-ready",        badgeClass: "badge-ready"        },
+  delivered:    { text: "Entregado",             cssClass: "status-delivered",    badgeClass: "badge-delivered"    },
+  attempted:    { text: "Intento de entrega",    cssClass: "status-attempted",    badgeClass: "badge-attempted"    },
+  distributor:  { text: "Con distribuidor",      cssClass: "status-distributor",  badgeClass: "badge-distributor"  },
+  transit:      { text: "En camino",             cssClass: "status-transit",      badgeClass: "badge-transit"      },
+  sorting:      { text: "Clasificando",          cssClass: "status-sorting",      badgeClass: "badge-sorting"      },
+  preimposed:   { text: "Preimposición",         cssClass: "status-preimposed",   badgeClass: "badge-preimposed"   },
+  admitted:     { text: "Admitido",              cssClass: "status-admitted",     badgeClass: "badge-admitted"     },
+  preparing:    { text: "Preparando",            cssClass: "status-preparing",    badgeClass: "badge-preparing"    },
+  validated:    { text: "Validado",              cssClass: "status-validated",    badgeClass: "badge-validated"    },
+  process:      { text: "En proceso",            cssClass: "status-process",      badgeClass: "badge-process"      },
+  returned:     { text: "Devuelto",              cssClass: "status-returned",     badgeClass: "badge-returned"     },
+  cancelled:    { text: "Cancelado",             cssClass: "status-cancelled",    badgeClass: "badge-cancelled"    },
 };
 
-const STATUS_PRIORITY = { ready: 0, transit: 1, preparing: 2, process: 3, cancelled: 4 };
-
-const STATUS_KEYWORDS = {
-  ready:     ["listo para retirar", "disponible", "entregado"],
-  transit:   ["en camino", "en distribución", "en reparto", "en tránsito", "salió", "distribucion",
-              "en poder del distribuidor", "intento de entrega"],
-  preparing: ["preparando", "admitido", "en preparación", "en proceso de", "validado", "generado",
-              "clasificaci", "en proceso"],
-  cancelled: ["cancelado", "devuelto", "rechazado", "anulado"],
+const STATUS_PRIORITY = {
+  ready: 0, delivered: 1, attempted: 2, distributor: 3, transit: 4,
+  sorting: 5, preimposed: 6, admitted: 7, preparing: 8,
+  validated: 9, process: 10, returned: 11, cancelled: 12,
 };
+
+// Orden importa: los más específicos primero
+const STATUS_KEYWORDS = [
+  ["ready",       ["listo para retirar", "disponible para retiro"]],
+  ["delivered",   ["entregado"]],
+  ["attempted",   ["intento de entrega"]],
+  ["distributor", ["en poder del distribuidor", "en poder de distribuidor"]],
+  ["transit",     ["en camino", "en distribución", "en reparto", "en tránsito", "salió para", "en viaje", "distribucion"]],
+  ["sorting",     ["clasificaci", "proceso de clasificac", "en clasificac"]],
+  ["preimposed",  ["preimposici", "preimpos"]],
+  ["admitted",    ["admitido", "recibido en"]],
+  ["preparing",   ["preparando", "en preparación", "generado", "en proceso de"]],
+  ["validated",   ["validado"]],
+  ["returned",    ["devuelto", "retornado"]],
+  ["cancelled",   ["cancelado", "rechazado", "anulado"]],
+];
 
 function normalizeStatus(raw = "") {
   const s = raw.toLowerCase().trim();
-  for (const [key, kws] of Object.entries(STATUS_KEYWORDS)) {
+  for (const [key, kws] of STATUS_KEYWORDS) {
     if (kws.some(kw => s.includes(kw))) return key;
   }
   return "process";
