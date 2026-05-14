@@ -474,6 +474,24 @@ body {
 .history-item:last-child { border-bottom: none; }
 .history-date { font-size: 10px; color: var(--text-3); white-space: nowrap; }
 
+.history-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0; margin-right: 6px;
+}
+.history-dot.badge-ready       { background: var(--s-ready); }
+.history-dot.badge-delivered   { background: var(--s-delivered); }
+.history-dot.badge-attempted   { background: var(--s-attempted); }
+.history-dot.badge-distributor { background: var(--s-distributor); }
+.history-dot.badge-transit     { background: var(--s-transit); }
+.history-dot.badge-sorting     { background: var(--s-sorting); }
+.history-dot.badge-preimposed  { background: var(--s-preimposed); }
+.history-dot.badge-admitted    { background: var(--s-admitted); }
+.history-dot.badge-preparing   { background: var(--s-prep); }
+.history-dot.badge-validated   { background: var(--s-validated); }
+.history-dot.badge-process     { background: var(--s-proc); }
+.history-dot.badge-returned    { background: var(--s-returned); }
+.history-dot.badge-cancelled   { background: var(--s-cancel); }
+
 /* ─── Notas ───────────────────────────────────────── */
 .card-notes-toggle {
   margin-top: 10px;

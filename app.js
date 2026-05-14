@@ -352,7 +352,7 @@ function renderCards() {
         ${[...pkg.history].reverse().map(h => {
           const hs = STATUS_MAP[h.status] || STATUS_MAP.process;
           return `<div class="history-item">
-            ${hs.emoji} ${escapeHtml(h.rawStatus || hs.text)}
+            <span class="history-dot ${hs.badgeClass}"></span>${escapeHtml(h.rawStatus || hs.text)}
             <span class="history-date">${formatHistoryDate(h.date)}</span>
           </div>`;
         }).join("")}
