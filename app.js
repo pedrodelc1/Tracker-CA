@@ -117,7 +117,11 @@ async function fetchPagados() {
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
   // Columnas: [icon, Producto, Integración, N°orden, Fecha, Seguimiento, Origen, Destinatario, Provincia, Dirección, Estado]
-  const rows = doc.querySelectorAll("table tbody tr");
+  // El tab activo es #pendientes dentro de #myTabContent
+  let rows = doc.querySelectorAll("#pendientes table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("table.mcr-table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
   const shipments = [];
 
   rows.forEach((row, idx) => {
