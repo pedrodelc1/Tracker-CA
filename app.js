@@ -1,5 +1,6 @@
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const MIS_ENVIOS_URL = "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios";
+const MIS_ENVIOS_URL  = "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios";
+const SEGUIMIENTO_URL = (n) => `https://www.correoargentino.com.ar/MiCorreo/public/seguimiento?numero=${n}`;
 
 const STATUS_MAP = {
   ready:     { emoji: "🟢", text: "LISTO PARA RETIRAR", cssClass: "status-ready",     badgeClass: "badge-ready"     },
@@ -36,7 +37,7 @@ function saveStorage() {
   return new Promise(r => chrome.storage.local.set({ packages }, r));
 }
 
-// ─── Fetch y parseo del HTML ──────────────────────────────────────────────────
+// ─── Fetch tabla de MiCorreo ──────────────────────────────────────────────────
 function getCellText(td) {
   if (!td) return "";
   const div = td.querySelector("div");
@@ -51,66 +52,95 @@ async function fetchShipments() {
     return { error: "network_error", message: e.message };
   }
 
-  // Si redirigió al login, la URL final cambia
   if (!resp.ok || resp.url.includes("login") || resp.url.includes("acceso")) {
     return { error: "not_logged_in" };
   }
 
   const html = await resp.text();
-  const doc = new DOMParser().parseFromString(html, "text/html");
+  const doc  = new DOMParser().parseFromString(html, "text/html");
 
-  // Verificar que hay sesión activa buscando el saludo "Hola, ..."
-  const loggedIn = doc.querySelector(".navbar-user, .user-name, [class*='usuario']");
   const loginForm = doc.querySelector("form[action*='login'], input[name='username'], input[name='j_username']");
-  if (loginForm && !loggedIn) return { error: "not_logged_in" };
+  if (loginForm) return { error: "not_logged_in" };
 
-  // Seleccionar filas de la tabla de envíos
-  // Estructura: table.mcr-table > tbody > tr
-  const rows = doc.querySelectorAll("table.mcr-table tbody tr, #divListado .dvEnvios table tbody tr");
+  // Intentar con selector principal, luego fallback
+  let rows = doc.querySelectorAll("table.mcr-table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
 
-  if (rows.length === 0) {
-    // Intentar selector genérico por si cambió la clase
-    const altRows = doc.querySelectorAll(".dvEnvios tr, table.table-hover tbody tr");
-    if (altRows.length === 0) return { error: "no_rows" };
-  }
+  // Si sigue sin filas, la sesión expiró sin redirigir
+  if (!rows.length) return { error: "not_logged_in" };
 
   const shipments = [];
-
   rows.forEach((row, idx) => {
     const tds = Array.from(row.querySelectorAll("td"));
-    // La fila tiene: [id-envio, producto, integracion, nOrden, origen, destinatario, entrega, detalles, usuario, estado]
-    // = 10 TDs (el checkbox es un TH, no TD)
     if (tds.length < 5) return;
 
-    const last = tds.length - 1;
+    const nOrden       = getCellText(tds[3]);
+    const origen       = getCellText(tds[4]);
+    const destinatario = getCellText(tds[5]);
+    const entrega      = getCellText(tds[6]);
+    const detalles     = getCellText(tds[7]);
+    const rawStatus    = getCellText(tds[tds.length - 1]);
 
-    const nOrden      = getCellText(tds[3]);
-    const origen      = getCellText(tds[4]);
-    const destinatario= getCellText(tds[5]);
-    const entrega     = getCellText(tds[6]);
-    const detalles    = getCellText(tds[7]);
-    const rawStatus   = getCellText(tds[last]);
-
-    // ID único: N° de orden si existe, sino combinación origen+destinatario
     const trackingId = (nOrden && nOrden !== "-" && nOrden !== "")
       ? nOrden
       : `envio-${origen}-${destinatario}-${idx}`.replace(/\s+/g, "_");
 
     shipments.push({
-      tracking:     trackingId,
-      label:        destinatario || `Envío ${idx + 1}`,
-      origen,
-      destinatario,
-      entrega,
-      detalles,
-      status:       normalizeStatus(rawStatus),
+      tracking: trackingId,
+      label: destinatario || `Envío ${idx + 1}`,
+      origen, destinatario, entrega, detalles,
+      status:    normalizeStatus(rawStatus),
       rawStatus,
-      lastDate:     "",
-      source:       "auto",
+      lastDate:  "",
+      source:    "auto",
     });
   });
 
   return { data: shipments };
+}
+
+// ─── Fetch estado de tracking individual (para manuales) ──────────────────────
+async function fetchTrackingStatus(trackingNumber) {
+  try {
+    // Intentar primero la API JSON
+    const apiResp = await fetch(
+      `https://api.correoargentino.com.ar/micorreo/v1/shipments/${trackingNumber}`,
+      { credentials: "include" }
+    );
+    if (apiResp.ok) {
+      const data = await apiResp.json();
+      const raw  = data.estadoDescripcion || data.status || data.estado || "";
+      if (raw) return { rawStatus: raw, status: normalizeStatus(raw) };
+    }
+  } catch {}
+
+  try {
+    // Fallback: parsear la página de seguimiento HTML
+    const resp = await fetch(SEGUIMIENTO_URL(trackingNumber), { credentials: "include" });
+    if (!resp.ok) return null;
+    const html = await resp.text();
+    const doc  = new DOMParser().parseFromString(html, "text/html");
+
+    // Buscar el estado en distintos selectores posibles
+    const selectors = [
+      ".estado-envio", ".tracking-status", ".status-text",
+      "[class*='estado']", "[class*='status']",
+      "table tbody tr:last-child td:last-child",
+    ];
+    for (const sel of selectors) {
+      const el = doc.querySelector(sel);
+      if (el) {
+        const raw = el.textContent.trim();
+        if (raw.length > 2 && raw.length < 80) {
+          return { rawStatus: raw, status: normalizeStatus(raw) };
+        }
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -139,9 +169,9 @@ function renderCards() {
     card.className = `card ${st.cssClass}`;
 
     const extraLines = [
-      pkg.origen      ? `<div class="card-meta">📍 Origen: ${escapeHtml(pkg.origen)}</div>` : "",
-      pkg.entrega     ? `<div class="card-meta">🏠 Entrega: ${escapeHtml(pkg.entrega)}</div>` : "",
-      pkg.detalles    ? `<div class="card-meta">📦 ${escapeHtml(pkg.detalles)}</div>` : "",
+      pkg.origen     ? `<div class="card-meta">📍 Origen: ${escapeHtml(pkg.origen)}</div>`   : "",
+      pkg.entrega    ? `<div class="card-meta">🏠 Entrega: ${escapeHtml(pkg.entrega)}</div>` : "",
+      pkg.detalles   ? `<div class="card-meta">📦 ${escapeHtml(pkg.detalles)}</div>`          : "",
     ].join("");
 
     card.innerHTML = `
@@ -150,7 +180,7 @@ function renderCards() {
       <input class="card-label" type="text" value="${escapeHtml(pkg.label)}"
              data-idx="${idx}" placeholder="Sin nombre" />
       <div class="card-badge ${st.badgeClass}">${st.emoji} ${st.text}</div>
-      <div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>
+      ${pkg.rawStatus ? `<div class="card-raw-status">${escapeHtml(pkg.rawStatus)}</div>` : ""}
       ${extraLines}
       ${pkg.loading ? `<div class="card-loading">Actualizando...</div>` : ""}
     `;
@@ -178,8 +208,7 @@ async function loadAndRender() {
   document.getElementById("noticeLogin").style.display  = "none";
   document.getElementById("noticeInfo").style.display   = "none";
 
-  const saved = await loadStorage();
-
+  const saved  = await loadStorage();
   const result = await fetchShipments();
 
   if (result.error === "not_logged_in") {
@@ -191,7 +220,7 @@ async function loadAndRender() {
   }
 
   if (result.error) {
-    showInfo(`No se pudo conectar con el sitio (${result.error}). Mostrando pedidos guardados.`);
+    showInfo(`Error de red (${result.error}). Mostrando pedidos guardados.`);
     packages = saved;
     document.getElementById("loadingState").style.display = "none";
     renderCards();
@@ -200,19 +229,16 @@ async function loadAndRender() {
 
   const autoPackages = result.data || [];
 
-  // Restaurar labels personalizados y agregar manuales que no estén en auto
+  // Restaurar labels personalizados
   const labelMap = {};
   saved.forEach(p => { if (p.customLabel) labelMap[p.tracking] = p.customLabel; });
-
   autoPackages.forEach(p => {
-    if (labelMap[p.tracking]) {
-      p.label       = labelMap[p.tracking];
-      p.customLabel = labelMap[p.tracking];
-    }
+    if (labelMap[p.tracking]) { p.label = labelMap[p.tracking]; p.customLabel = labelMap[p.tracking]; }
   });
 
-  const autoIds  = new Set(autoPackages.map(p => p.tracking));
-  const manuals  = saved.filter(p => p.source === "manual" && !autoIds.has(p.tracking));
+  // Agregar manuales que no estén en auto
+  const autoIds = new Set(autoPackages.map(p => p.tracking));
+  const manuals = saved.filter(p => p.source === "manual" && !autoIds.has(p.tracking));
 
   packages = [...autoPackages, ...manuals];
   await saveStorage();
@@ -226,12 +252,28 @@ async function refreshAll() {
   const btn = document.getElementById("btnRefresh");
   btn.disabled = true;
   btn.textContent = "Actualizando...";
+
+  // Actualizar estado de los manuales en paralelo
+  const manuals = packages.filter(p => p.source === "manual");
+  manuals.forEach(p => { p.loading = true; });
+  if (manuals.length) renderCards();
+
+  await Promise.all(manuals.map(async (pkg) => {
+    const result = await fetchTrackingStatus(pkg.tracking);
+    if (result) {
+      pkg.status    = result.status;
+      pkg.rawStatus = result.rawStatus;
+    }
+    pkg.loading = false;
+  }));
+
   await loadAndRender();
+
   btn.disabled = false;
   btn.textContent = "↻ Actualizar todos";
 }
 
-// ─── Eventos: grid (delegación) ───────────────────────────────────────────────
+// ─── Eventos: grid ────────────────────────────────────────────────────────────
 document.getElementById("cardsGrid").addEventListener("click", async (e) => {
   const del = e.target.closest(".card-delete");
   if (!del) return;
@@ -274,18 +316,32 @@ document.getElementById("btnModalAdd").addEventListener("click", async () => {
   if (!tracking) { document.getElementById("inputTracking").focus(); return; }
   if (packages.some(p => p.tracking === tracking)) { alert("Ese tracking ya existe."); return; }
 
-  packages.unshift({
+  const pkg = {
     tracking,
     label:       label || tracking,
     customLabel: label || "",
     status:      "process",
-    rawStatus:   "",
+    rawStatus:   "Consultando...",
+    loading:     true,
     source:      "manual",
-  });
+  };
 
+  packages.unshift(pkg);
   await saveStorage();
   renderCards();
   document.getElementById("modalOverlay").style.display = "none";
+
+  // Consultar estado inmediatamente
+  const result = await fetchTrackingStatus(tracking);
+  if (result) {
+    pkg.status    = result.status;
+    pkg.rawStatus = result.rawStatus;
+  } else {
+    pkg.rawStatus = "";
+  }
+  pkg.loading = false;
+  await saveStorage();
+  renderCards();
 });
 
 document.addEventListener("keydown", e => {
