@@ -37,96 +37,77 @@
     return shipments.length ? shipments : null;
   }
 
-  // ── Parse pagados table ─────────────────────────────────────────────────────
-  function parsePagados(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    let rows = doc.querySelectorAll("#pendientes .panel-default table tbody tr");
-    if (!rows.length) rows = doc.querySelectorAll("#pendientes table tbody tr");
-    if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
-    if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
-    if (!rows.length) return [];
 
-    const TRACKING_RE = /^[0-9A-Z]{10,}$/;
+  // ── Parse pagados from live DOM (listadooperaciones page) ───────────────────
+  function parsePagadosDom() {
+    let rows = document.querySelectorAll("table tbody tr");
+    if (!rows.length) return null;
+
+    const TRACKING_RE = /^[0-9A-Z]{8,}$/;
     const shipments = [];
+
     rows.forEach((row, idx) => {
       const tds = Array.from(row.querySelectorAll("td"));
       if (tds.length < 6) return;
+
+      // Find tracking number cell
       let tracking = "", trackingIdx = -1;
       for (let i = 0; i < tds.length; i++) {
         const clone = tds[i].cloneNode(true);
-        clone.querySelectorAll("button,a,svg,i,span.sr-only").forEach(el => el.remove());
+        clone.querySelectorAll("button,a,svg,i,span.sr-only,input").forEach(el => el.remove());
         const txt = clone.textContent.trim().replace(/\s+/g, "");
-        if (TRACKING_RE.test(txt) && txt.length > 10) { tracking = txt; trackingIdx = i; break; }
+        if (TRACKING_RE.test(txt) && txt.length >= 8) { tracking = txt; trackingIdx = i; break; }
       }
       if (!tracking) return;
+
       const fecha     = trackingIdx > 0 ? getCellText(tds[trackingIdx - 1]) : "";
       const origen    = getCellText(tds[trackingIdx + 1]);
       const dest      = getCellText(tds[trackingIdx + 2]);
       const provincia = getCellText(tds[trackingIdx + 3]);
       const rawStatus = getCellText(tds[tds.length - 1]);
-      shipments.push({ tracking, label: dest || `Envío ${idx + 1}`,
+
+      shipments.push({
+        tracking, label: dest || `Envío ${idx + 1}`,
         origen, destinatario: dest, entrega: provincia,
-        detalles: fecha ? `Fecha: ${fecha}` : "", rawStatus, lastDate: fecha, source: "pagado" });
-    });
-    return shipments;
-  }
-
-  // ── Fetch pagados via POST (same-origin, works from content script) ─────────
-  async function fetchPagados(token) {
-    try {
-      const body = new URLSearchParams({
-        _token: token, fdesde: "", fhasta: "", tn: "",
-        provincia_orig: "", provincia_dest: "",
-        sucu_orig: "", sucu_dest: "", destino_nombre: "",
-        pag: "0", sortc: "FECHA_CREACION", sortr: "1",
-      }).toString();
-      const r = await fetch(`${BASE}/qlistadoget_operaciones`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
+        detalles: fecha ? `Fecha: ${fecha}` : "",
+        rawStatus, lastDate: fecha, source: "pagado",
       });
-      console.log("[CorreoTracker] pagados status:", r.status, "url:", r.url);
-      const html = await r.text();
-      console.log("[CorreoTracker] pagados HTML (500 chars):", html.slice(0, 500));
-      return r.ok ? html : null;
-    } catch (e) {
-      console.log("[CorreoTracker] pagados error:", e);
-      return null;
-    }
+    });
+    return shipments.length ? shipments : null;
   }
 
-  // ── Main: save data to storage when table is ready ──────────────────────────
+  // ── Main: save data when table is ready ─────────────────────────────────────
   async function saveData() {
-    const isMisEnvios = window.location.href.includes("mis-envios");
-    // Try both variable names used by the site
-    const token = window.el_token || window._token || null;
-    console.log("[CorreoTracker] saveData — url:", window.location.href, "token:", token ? token.slice(0,8)+"…" : "null");
+    const url = window.location.href;
+    const isMisEnvios        = url.includes("mis-envios");
+    const isListadoOps       = url.includes("listadooperaciones");
+    console.log("[CorreoTracker] saveData — url:", url);
 
-    let pendientes = null;
+    // Load whatever is already saved so we can merge pages
+    const existing = await new Promise(r =>
+      chrome.storage.local.get(["liveData"], d => r(d.liveData || {}))
+    );
+
+    let pendientes = existing.pendientes || [];
+    let pagados    = existing.pagados    || [];
+
     if (isMisEnvios) {
-      pendientes = parseMisEnvios();
-      console.log("[CorreoTracker] pendientes encontrados:", pendientes ? pendientes.length : 0);
+      const found = parseMisEnvios();
+      console.log("[CorreoTracker] pendientes encontrados:", found ? found.length : 0);
+      if (found) pendientes = found;
     }
 
-    let pagados = [];
-    if (token) {
-      const html = await fetchPagados(token);
-      if (html) {
-        pagados = parsePagados(html);
-        console.log("[CorreoTracker] pagados encontrados:", pagados.length);
-      }
-    } else {
-      console.log("[CorreoTracker] sin token — saltando pagados");
+    if (isListadoOps) {
+      const found = parsePagadosDom();
+      console.log("[CorreoTracker] pagados encontrados:", found ? found.length : 0);
+      if (found) pagados = found;
     }
 
-    const hasData = (pendientes && pendientes.length > 0) || pagados.length > 0;
-
-    // Always save whatever we have (even partial data)
     chrome.storage.local.set({
-      liveData: { pendientes: pendientes || [], pagados, ts: Date.now() },
+      liveData: { pendientes, pagados, ts: Date.now() },
     });
     chrome.runtime.sendMessage({ type: "LIVE_DATA_READY" }).catch(() => {});
-    return hasData;
+    return (pendientes.length + pagados.length) > 0;
   }
 
   // Try immediately, then watch DOM for AJAX content
