@@ -95,7 +95,7 @@ function formatHistoryDate(iso) {
 // ─── Session check via cookie (more reliable than URL/HTML heuristics) ────────
 async function isLoggedIn() {
   return new Promise((resolve) => {
-    chrome.cookies.getAll({ domain: "correoargentino.com.ar" }, (cookies) => {
+    chrome.cookies.getAll({ url: "https://www.correoargentino.com.ar" }, (cookies) => {
       console.log("[CorreoTracker] cookies encontradas:", cookies.map(c => c.name));
       resolve(cookies.length > 0);
     });
