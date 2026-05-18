@@ -157,7 +157,7 @@ async function fetchShipments() {
 
 // ─── Fetch Pagados ────────────────────────────────────────────────────────────
 async function getCsrfToken() {
-  // Laravel sets XSRF-TOKEN as a cookie — more reliable than scraping HTML
+  // Try XSRF-TOKEN cookie first, then fall back to parsing var el_token from page HTML
   return new Promise((resolve) => {
     chrome.cookies.get(
       { url: "https://www.correoargentino.com.ar", name: "XSRF-TOKEN" },
@@ -166,15 +166,22 @@ async function getCsrfToken() {
   });
 }
 
+function extractTokenFromHtml(html) {
+  // Correo Argentino stores the token as: var el_token = "..."
+  const match = html.match(/var\s+el_token\s*=\s*["']([^"']+)["']/);
+  return match ? match[1] : null;
+}
+
 async function fetchPagados() {
-  // Verify session is active before fetching
   let pageResp;
   try {
     pageResp = await fetch(PAGADOS_URL, { credentials: "include" });
   } catch { return []; }
   if (!pageResp.ok || pageResp.url.includes("login")) return [];
 
-  const token = await getCsrfToken();
+  const pageHtml = await pageResp.text();
+  const token = (await getCsrfToken()) || extractTokenFromHtml(pageHtml);
+  console.log("[CorreoTracker] pagados token:", token ? token.slice(0, 10) + "..." : "null");
 
   if (!token) { fetchPagados._debug = "no_token"; return []; }
 
