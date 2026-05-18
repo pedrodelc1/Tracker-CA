@@ -92,13 +92,22 @@ function formatHistoryDate(iso) {
   } catch { return ""; }
 }
 
-// ─── Read live data saved by content script ───────────────────────────────────
+// ─── Fetch via background (reads DOM of open MiCorreo tabs) ──────────────────
+function fetchFromBackground() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "FETCH_CORREO_DATA" }, (resp) => {
+      resolve(resp || null);
+    });
+  });
+}
+
+// Also read content-script cached data as fallback
 function loadLiveData() {
   return new Promise(r => chrome.storage.local.get(["liveData"], d => r(d.liveData || null)));
 }
 
 async function fetchShipments() {
-  const live = await loadLiveData();
+  const live = await fetchFromBackground() || await loadLiveData();
   if (!live) return { error: "not_logged_in" };
   const shipments = (live.pendientes || []).map(s => ({
     ...s, status: normalizeStatus(s.rawStatus),
@@ -107,7 +116,7 @@ async function fetchShipments() {
 }
 
 async function fetchPagados() {
-  const live = await loadLiveData();
+  const live = await fetchFromBackground() || await loadLiveData();
   if (!live) return [];
   return (live.pagados || []).map(s => ({
     ...s, status: normalizeStatus(s.rawStatus),
@@ -304,7 +313,9 @@ async function loadAndRender() {
   document.getElementById("noticeInfo").style.display   = "none";
 
   const saved  = await loadStorage();
-  const [result, pagados] = await Promise.all([fetchShipments(), fetchPagados()]);
+  const live   = await fetchFromBackground() || await loadLiveData();
+  const result  = live ? { data: (live.pendientes || []).map(s => ({ ...s, status: normalizeStatus(s.rawStatus) })) } : { error: "not_logged_in" };
+  const pagados = live ? (live.pagados || []).map(s => ({ ...s, status: normalizeStatus(s.rawStatus) })) : [];
 
   if (result.error === "not_logged_in") {
     document.getElementById("noticeLogin").style.display = "flex";
