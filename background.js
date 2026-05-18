@@ -19,24 +19,15 @@ async function waitForTab(tabId) {
 }
 
 async function fetchViaTab() {
-  // Prefer a tab already on mis-envios so we can read live DOM
-  let tabs = await chrome.tabs.query({
-    url: "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios*",
+  // Only use tabs the user already has open — never create new ones
+  const tabs = await chrome.tabs.query({
+    url: "https://www.correoargentino.com.ar/*",
   });
 
-  let tab, created = false;
+  if (!tabs.length) return { error: "not_logged_in" };
 
-  if (!tabs.length) {
-    // Open a silent background tab and navigate to mis-envios
-    tab = await chrome.tabs.create({
-      url: "https://www.correoargentino.com.ar/MiCorreo/public/mis-envios",
-      active: false,
-    });
-    created = true;
-    await waitForTab(tab.id);
-  } else {
-    tab = tabs[0];
-  }
+  // Prefer a tab already on mis-envios
+  const tab = tabs.find(t => t.url.includes("mis-envios")) || tabs[0];
 
   let result;
   try {
@@ -45,32 +36,30 @@ async function fetchViaTab() {
       func: async () => {
         const BASE = "https://www.correoargentino.com.ar/MiCorreo/public";
 
-        // mis-envios data is loaded via AJAX — poll the live DOM until rows appear
-        const waitForRows = () => new Promise((resolve) => {
-          let attempts = 0;
-          const tick = () => {
-            const rows = document.querySelectorAll("table tbody tr");
-            if (rows.length > 0 || attempts++ >= 20) {
-              resolve(document.documentElement.outerHTML);
-            } else {
-              setTimeout(tick, 500);
-            }
-          };
-          tick();
-        });
-
         const isOnMisEnvios = window.location.href.includes("mis-envios");
+
         let misEnviosHtml;
 
         if (isOnMisEnvios) {
-          misEnviosHtml = await waitForRows();
+          // Page is already open — wait for AJAX to populate the table (up to 10s)
+          await new Promise((resolve) => {
+            let attempts = 0;
+            const tick = () => {
+              if (document.querySelectorAll("table tbody tr").length > 0 || attempts++ >= 20) {
+                resolve();
+              } else {
+                setTimeout(tick, 500);
+              }
+            };
+            tick();
+          });
+          misEnviosHtml = document.documentElement.outerHTML;
         } else {
-          // Navigate the hidden tab to mis-envios and wait for data
-          window.location.href = `${BASE}/mis-envios`;
-          // This won't work in a synchronous way — fall back to fetch
+          // Fetch mis-envios from this tab's same-origin context
           try {
             const r = await fetch(`${BASE}/mis-envios`, { credentials: "include" });
-            misEnviosHtml = r.ok ? await r.text() : null;
+            misEnviosHtml = (r.ok && !r.url.includes("/login") && !r.url.includes("/error"))
+              ? await r.text() : null;
           } catch { misEnviosHtml = null; }
         }
 
@@ -101,11 +90,9 @@ async function fetchViaTab() {
       },
     });
   } catch (e) {
-    if (created) chrome.tabs.remove(tab.id).catch(() => {});
     return { error: "script_failed" };
   }
 
-  if (created) chrome.tabs.remove(tab.id).catch(() => {});
   return result?.result || { error: "no_data" };
 }
 
