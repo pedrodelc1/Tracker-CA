@@ -85,8 +85,14 @@
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
       });
-      return r.ok ? await r.text() : null;
-    } catch { return null; }
+      console.log("[CorreoTracker] pagados status:", r.status, "url:", r.url);
+      const html = await r.text();
+      console.log("[CorreoTracker] pagados HTML (500 chars):", html.slice(0, 500));
+      return r.ok ? html : null;
+    } catch (e) {
+      console.log("[CorreoTracker] pagados error:", e);
+      return null;
+    }
   }
 
   // ── Main: save data to storage when table is ready ──────────────────────────
