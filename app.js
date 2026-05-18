@@ -92,101 +92,26 @@ function formatHistoryDate(iso) {
   } catch { return ""; }
 }
 
-// ─── Fetch raw data via background (executes inside MiCorreo tab) ─────────────
-function fetchRawData() {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "FETCH_CORREO_DATA" }, (resp) => {
-      resolve(resp || { error: "no_response" });
-    });
-  });
-}
-
-// ─── Parse Pendientes HTML ────────────────────────────────────────────────────
-function parseShipmentsHtml(html) {
-  if (!html) return { data: [] };
-  const doc = new DOMParser().parseFromString(html, "text/html");
-
-  let rows = doc.querySelectorAll("table.mcr-table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
-  if (!rows.length) return { data: [] };
-
-  const shipments = [];
-  rows.forEach((row, idx) => {
-    const tds = Array.from(row.querySelectorAll("td"));
-    if (tds.length < 5) return;
-    const nOrden       = getCellText(tds[3]);
-    const origen       = getCellText(tds[4]);
-    const destinatario = getCellText(tds[5]);
-    const entrega      = getCellText(tds[6]);
-    const detalles     = getCellText(tds[7]);
-    const rawStatus    = getCellText(tds[tds.length - 1]);
-    const trackingId   = (nOrden && nOrden !== "-" && nOrden !== "")
-      ? nOrden
-      : `envio-${origen}-${destinatario}-${idx}`.replace(/\s+/g, "_");
-    shipments.push({
-      tracking: trackingId, label: destinatario || `Envío ${idx + 1}`,
-      origen, destinatario, entrega, detalles,
-      status: normalizeStatus(rawStatus), rawStatus, lastDate: "", source: "auto",
-    });
-  });
-  return { data: shipments };
+// ─── Read live data saved by content script ───────────────────────────────────
+function loadLiveData() {
+  return new Promise(r => chrome.storage.local.get(["liveData"], d => r(d.liveData || null)));
 }
 
 async function fetchShipments() {
-  const raw = await fetchRawData();
-  if (raw.error) return raw;
-  return parseShipmentsHtml(raw.misEnviosHtml);
-}
-
-// ─── Parse Pagados HTML ───────────────────────────────────────────────────────
-function parsePagadosHtml(html) {
-  if (!html) return [];
-  const doc  = new DOMParser().parseFromString(html, "text/html");
-
-  let rows = doc.querySelectorAll("#pendientes .panel-default table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("#pendientes table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
-  if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
-
-
-  const shipments = [];
-  const TRACKING_RE = /^[0-9A-Z]{10,}$/;
-
-  rows.forEach((row, idx) => {
-    const tds = Array.from(row.querySelectorAll("td"));
-    if (tds.length < 6) return;
-
-    let tracking = "", trackingIdx = -1;
-    for (let i = 0; i < tds.length; i++) {
-      const clone = tds[i].cloneNode(true);
-      clone.querySelectorAll("button, a, svg, i, span.sr-only").forEach(el => el.remove());
-      const txt = clone.textContent.trim().replace(/\s+/g, "");
-      if (TRACKING_RE.test(txt) && txt.length > 10) { tracking = txt; trackingIdx = i; break; }
-    }
-    if (!tracking) return;
-
-    const fecha     = trackingIdx > 0 ? getCellText(tds[trackingIdx - 1]) : "";
-    const origen    = getCellText(tds[trackingIdx + 1]);
-    const dest      = getCellText(tds[trackingIdx + 2]);
-    const provincia = getCellText(tds[trackingIdx + 3]);
-    const rawStatus = getCellText(tds[tds.length - 1]);
-
-    shipments.push({
-      tracking, label: dest || `Envío ${idx + 1}`,
-      origen, destinatario: dest, entrega: provincia,
-      detalles: fecha ? `Fecha: ${fecha}` : "",
-      status: normalizeStatus(rawStatus), rawStatus, lastDate: fecha, source: "pagado",
-    });
-  });
-  return shipments;
+  const live = await loadLiveData();
+  if (!live) return { error: "not_logged_in" };
+  const shipments = (live.pendientes || []).map(s => ({
+    ...s, status: normalizeStatus(s.rawStatus),
+  }));
+  return { data: shipments };
 }
 
 async function fetchPagados() {
-  const raw = await fetchRawData();
-  return parsePagadosHtml(raw.pagadosHtml);
+  const live = await loadLiveData();
+  if (!live) return [];
+  return (live.pagados || []).map(s => ({
+    ...s, status: normalizeStatus(s.rawStatus),
+  }));
 }
 
 // ─── Fetch tracking individual (manuales) ────────────────────────────────────
@@ -379,9 +304,7 @@ async function loadAndRender() {
   document.getElementById("noticeInfo").style.display   = "none";
 
   const saved  = await loadStorage();
-  const raw = await fetchRawData();
-  const result = raw.error ? raw : parseShipmentsHtml(raw.misEnviosHtml);
-  const pagados = raw.error ? [] : parsePagadosHtml(raw.pagadosHtml);
+  const [result, pagados] = await Promise.all([fetchShipments(), fetchPagados()]);
 
   if (result.error === "not_logged_in") {
     document.getElementById("noticeLogin").style.display = "flex";
@@ -561,7 +484,7 @@ document.addEventListener("keydown", e => {
 
 // ─── Auto-refresh desde background ───────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "auto-refresh") refreshAll();
+  if (msg.type === "auto-refresh" || msg.type === "live-data-ready") refreshAll();
 });
 
 // ─── Tema oscuro/claro ────────────────────────────────────────────────────────
