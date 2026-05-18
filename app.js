@@ -312,10 +312,28 @@ async function loadAndRender() {
   document.getElementById("noticeLogin").style.display  = "none";
   document.getElementById("noticeInfo").style.display   = "none";
 
-  const saved  = await loadStorage();
-  const live   = await fetchFromBackground() || await loadLiveData();
-  const result  = live ? { data: (live.pendientes || []).map(s => ({ ...s, status: normalizeStatus(s.rawStatus) })) } : { error: "not_logged_in" };
-  const pagados = live ? (live.pagados || []).map(s => ({ ...s, status: normalizeStatus(s.rawStatus) })) : [];
+  const saved    = await loadStorage();
+  const scraped  = await fetchFromBackground();
+  const cached   = await loadLiveData();
+
+  // Merge: prefer freshly scraped data per section, fall back to cached
+  const pendientesRaw = (scraped?.pendientes?.length ? scraped.pendientes : null)
+    ?? cached?.pendientes ?? [];
+  const pagadosRaw    = (scraped?.pagados?.length    ? scraped.pagados    : null)
+    ?? cached?.pagados    ?? [];
+
+  // Persist merged result so next open still has data
+  if (scraped) {
+    chrome.storage.local.set({ liveData: {
+      pendientes: pendientesRaw, pagados: pagadosRaw, ts: Date.now()
+    }});
+  }
+
+  const hasLive = pendientesRaw.length > 0 || pagadosRaw.length > 0;
+  const result  = hasLive
+    ? { data: pendientesRaw.map(s => ({ ...s, status: normalizeStatus(s.rawStatus) })) }
+    : { error: "not_logged_in" };
+  const pagados = pagadosRaw.map(s => ({ ...s, status: normalizeStatus(s.rawStatus) }));
 
   if (result.error === "not_logged_in") {
     document.getElementById("noticeLogin").style.display = "flex";
