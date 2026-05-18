@@ -98,27 +98,35 @@
   // ── Main: save data to storage when table is ready ──────────────────────────
   async function saveData() {
     const isMisEnvios = window.location.href.includes("mis-envios");
-    const token = window.el_token || null;
+    // Try both variable names used by the site
+    const token = window.el_token || window._token || null;
+    console.log("[CorreoTracker] saveData — url:", window.location.href, "token:", token ? token.slice(0,8)+"…" : "null");
 
     let pendientes = null;
     if (isMisEnvios) {
       pendientes = parseMisEnvios();
+      console.log("[CorreoTracker] pendientes encontrados:", pendientes ? pendientes.length : 0);
     }
 
     let pagados = [];
     if (token) {
       const html = await fetchPagados(token);
-      if (html) pagados = parsePagados(html);
+      if (html) {
+        pagados = parsePagados(html);
+        console.log("[CorreoTracker] pagados encontrados:", pagados.length);
+      }
+    } else {
+      console.log("[CorreoTracker] sin token — saltando pagados");
     }
 
     const hasData = (pendientes && pendientes.length > 0) || pagados.length > 0;
-    if (!hasData) return false;
 
+    // Always save whatever we have (even partial data)
     chrome.storage.local.set({
       liveData: { pendientes: pendientes || [], pagados, ts: Date.now() },
     });
     chrome.runtime.sendMessage({ type: "LIVE_DATA_READY" }).catch(() => {});
-    return true;
+    return hasData;
   }
 
   // Try immediately, then watch DOM for AJAX content
