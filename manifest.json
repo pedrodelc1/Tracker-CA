@@ -19,7 +19,8 @@
     "cookies",
     "tabs",
     "notifications",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
   "host_permissions": [
     "https://www.correoargentino.com.ar/*",

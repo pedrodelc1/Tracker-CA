@@ -92,45 +92,25 @@ function formatHistoryDate(iso) {
   } catch { return ""; }
 }
 
-// ─── Session check via cookie (more reliable than URL/HTML heuristics) ────────
-async function isLoggedIn() {
+// ─── Fetch raw data via background (executes inside MiCorreo tab) ─────────────
+function fetchRawData() {
   return new Promise((resolve) => {
-    chrome.cookies.getAll({ url: "https://www.correoargentino.com.ar" }, (cookies) => {
-      console.log("[CorreoTracker] cookies encontradas:", cookies.map(c => c.name));
-      resolve(cookies.length > 0);
+    chrome.runtime.sendMessage({ type: "FETCH_CORREO_DATA" }, (resp) => {
+      resolve(resp || { error: "no_response" });
     });
   });
 }
 
-// ─── Fetch Pendientes ─────────────────────────────────────────────────────────
-async function fetchShipments() {
-  const loggedIn = await isLoggedIn();
-  if (!loggedIn) return { error: "not_logged_in" };
-
-  let resp;
-  try {
-    resp = await fetch(MIS_ENVIOS_URL, { credentials: "include" });
-  } catch (e) { return { error: "network_error" }; }
-
-  if (!resp.ok) return { error: "network_error" };
-
-  const html = await resp.text();
-  const doc  = new DOMParser().parseFromString(html, "text/html");
-
-  // Only treat as logged-out if the page URL explicitly redirected to login
-  if (resp.url.includes("/login") && !resp.url.includes("mis-envios")) {
-    return { error: "not_logged_in" };
-  }
-
-  console.log("[CorreoTracker] mis-envios URL final:", resp.url);
-  console.log("[CorreoTracker] mis-envios HTML (primeros 2000 chars):", html.slice(0, 2000));
+// ─── Parse Pendientes HTML ────────────────────────────────────────────────────
+function parseShipmentsHtml(html) {
+  if (!html) return { data: [] };
+  const doc = new DOMParser().parseFromString(html, "text/html");
 
   let rows = doc.querySelectorAll("table.mcr-table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
-  console.log("[CorreoTracker] mis-envios rows encontrados:", rows.length);
   if (!rows.length) return { data: [] };
 
   const shipments = [];
@@ -155,53 +135,15 @@ async function fetchShipments() {
   return { data: shipments };
 }
 
-// ─── Fetch Pagados ────────────────────────────────────────────────────────────
-async function getCsrfToken() {
-  // Try XSRF-TOKEN cookie first, then fall back to parsing var el_token from page HTML
-  return new Promise((resolve) => {
-    chrome.cookies.get(
-      { url: "https://www.correoargentino.com.ar", name: "XSRF-TOKEN" },
-      (cookie) => resolve(cookie ? decodeURIComponent(cookie.value) : null)
-    );
-  });
+async function fetchShipments() {
+  const raw = await fetchRawData();
+  if (raw.error) return raw;
+  return parseShipmentsHtml(raw.misEnviosHtml);
 }
 
-function extractTokenFromHtml(html) {
-  // Correo Argentino stores the token as: var el_token = "..."
-  const match = html.match(/var\s+el_token\s*=\s*["']([^"']+)["']/);
-  return match ? match[1] : null;
-}
-
-async function fetchPagados() {
-  let pageResp;
-  try {
-    pageResp = await fetch(PAGADOS_URL, { credentials: "include" });
-  } catch { return []; }
-  if (!pageResp.ok || pageResp.url.includes("login")) return [];
-
-  const pageHtml = await pageResp.text();
-  const token = (await getCsrfToken()) || extractTokenFromHtml(pageHtml);
-  console.log("[CorreoTracker] pagados token:", token ? token.slice(0, 10) + "..." : "null");
-
-  if (!token) { fetchPagados._debug = "no_token"; return []; }
-
-  let resp;
-  try {
-    const body = new URLSearchParams({
-      _token: token, fdesde: "", fhasta: "", tn: "",
-      provincia_orig: "", provincia_dest: "",
-      sucu_orig: "", sucu_dest: "", destino_nombre: "",
-      pag: "0", sortc: "FECHA_CREACION", sortr: "1",
-    });
-    resp = await fetch(PAGADOS_API_URL, {
-      method: "POST", credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-  } catch { return []; }
-  if (!resp.ok) return [];
-
-  const html = await resp.text();
+// ─── Parse Pagados HTML ───────────────────────────────────────────────────────
+function parsePagadosHtml(html) {
+  if (!html) return [];
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
   let rows = doc.querySelectorAll("#pendientes .panel-default table tbody tr");
@@ -209,7 +151,6 @@ async function fetchPagados() {
   if (!rows.length) rows = doc.querySelectorAll("#myTabContent table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
 
-  fetchPagados._debug = `rows=${rows.length}`;
 
   const shipments = [];
   const TRACKING_RE = /^[0-9A-Z]{10,}$/;
@@ -241,6 +182,11 @@ async function fetchPagados() {
     });
   });
   return shipments;
+}
+
+async function fetchPagados() {
+  const raw = await fetchRawData();
+  return parsePagadosHtml(raw.pagadosHtml);
 }
 
 // ─── Fetch tracking individual (manuales) ────────────────────────────────────
@@ -433,7 +379,9 @@ async function loadAndRender() {
   document.getElementById("noticeInfo").style.display   = "none";
 
   const saved  = await loadStorage();
-  const [result, pagados] = await Promise.all([fetchShipments(), fetchPagados()]);
+  const raw = await fetchRawData();
+  const result = raw.error ? raw : parseShipmentsHtml(raw.misEnviosHtml);
+  const pagados = raw.error ? [] : parsePagadosHtml(raw.pagadosHtml);
 
   if (result.error === "not_logged_in") {
     document.getElementById("noticeLogin").style.display = "flex";
