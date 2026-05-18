@@ -92,19 +92,37 @@ function formatHistoryDate(iso) {
   } catch { return ""; }
 }
 
+// ─── Session check via cookie (more reliable than URL/HTML heuristics) ────────
+async function isLoggedIn() {
+  return new Promise((resolve) => {
+    chrome.cookies.getAll({ domain: "correoargentino.com.ar" }, (cookies) => {
+      // Laravel session cookie or XSRF token present = logged in
+      const hasSession = cookies.some(c =>
+        c.name === "laravel_session" || c.name === "XSRF-TOKEN" ||
+        c.name.startsWith("micorreo") || c.name === "remember_web"
+      );
+      resolve(hasSession);
+    });
+  });
+}
+
 // ─── Fetch Pendientes ─────────────────────────────────────────────────────────
 async function fetchShipments() {
+  const loggedIn = await isLoggedIn();
+  if (!loggedIn) return { error: "not_logged_in" };
+
   let resp;
   try {
     resp = await fetch(MIS_ENVIOS_URL, { credentials: "include" });
   } catch (e) { return { error: "network_error" }; }
 
-  if (!resp.ok || resp.url.includes("login") || resp.url.includes("acceso")) return { error: "not_logged_in" };
+  if (!resp.ok) return { error: "network_error" };
 
   const html = await resp.text();
   const doc  = new DOMParser().parseFromString(html, "text/html");
 
-  if (doc.querySelector("form[action*='login'], input[name='username'], input[name='j_username']")) {
+  // Only treat as logged-out if the page URL explicitly redirected to login
+  if (resp.url.includes("/login") && !resp.url.includes("mis-envios")) {
     return { error: "not_logged_in" };
   }
 
@@ -112,7 +130,7 @@ async function fetchShipments() {
   if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
-  if (!rows.length) return { error: "not_logged_in" };
+  if (!rows.length) return { data: [] };
 
   const shipments = [];
   rows.forEach((row, idx) => {
