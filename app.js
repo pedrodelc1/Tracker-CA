@@ -122,10 +122,15 @@ async function fetchShipments() {
     return { error: "not_logged_in" };
   }
 
+  console.log("[CorreoTracker] mis-envios URL final:", resp.url);
+  console.log("[CorreoTracker] mis-envios HTML (primeros 2000 chars):", html.slice(0, 2000));
+
   let rows = doc.querySelectorAll("table.mcr-table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("#divListado .dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll(".dvEnvios table tbody tr");
   if (!rows.length) rows = doc.querySelectorAll("table.table-hover tbody tr");
+  if (!rows.length) rows = doc.querySelectorAll("table tbody tr");
+  console.log("[CorreoTracker] mis-envios rows encontrados:", rows.length);
   if (!rows.length) return { data: [] };
 
   const shipments = [];
