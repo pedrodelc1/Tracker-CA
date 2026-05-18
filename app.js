@@ -96,12 +96,8 @@ function formatHistoryDate(iso) {
 async function isLoggedIn() {
   return new Promise((resolve) => {
     chrome.cookies.getAll({ domain: "correoargentino.com.ar" }, (cookies) => {
-      // Laravel session cookie or XSRF token present = logged in
-      const hasSession = cookies.some(c =>
-        c.name === "laravel_session" || c.name === "XSRF-TOKEN" ||
-        c.name.startsWith("micorreo") || c.name === "remember_web"
-      );
-      resolve(hasSession);
+      console.log("[CorreoTracker] cookies encontradas:", cookies.map(c => c.name));
+      resolve(cookies.length > 0);
     });
   });
 }
